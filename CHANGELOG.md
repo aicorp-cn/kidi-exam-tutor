@@ -74,9 +74,9 @@
 - 后端 `validate_stage2()` 抓结构错误
 - 题型模板是 User Prompt 文本
 
-## v1-v3 — 2026-06-01~02
+## v1-v3 — 2026-06-01 ~ 2026-06-02
 
-- `parse_exam.py` 文本解析脚本
+- `parse_exam.py` 文本解析脚本（518行，3 题型 × 3 测试用例）
 - OCR → 文本 → Agent 执行的初始管线
 - `ocr-and-documents` Skill 探索（确定不可用于 JPEG 试卷）
 - 确定 DeepSeek Tool Calling + Strict Schema 架构方向
