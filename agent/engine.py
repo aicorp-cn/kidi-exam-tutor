@@ -271,6 +271,7 @@ async def _stage2_call(s1_data: dict, exam_type: str = "",
                 tool_choice="required",
                 temperature=params.get("temperature", 0.3),
                 max_tokens=params.get("max_tokens", 16384),
+                extra_body=params.get("extra_body"),
             )
 
             if not response.choices[0].message.tool_calls:
