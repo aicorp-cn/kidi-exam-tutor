@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f1a">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<title>Exam Tutor</title>
+<style>
+:root{--bg:#0f0f1a;--surface:#1a1a2e;--border:#2a2a3e;--text:#e0e0e0;--muted:#888;--accent:#6366f1;--success:#22c55e;--error:#ef4444;--warn:#f59e0b;--playing:#a855f7;--radius:12px;--safe-bottom:env(safe-area-inset-bottom,16px)}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB',sans-serif;background:var(--bg);color:var(--text);-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+.app{height:100%;display:flex;flex-direction:column;max-width:480px;margin:0 auto;position:relative;overflow:hidden}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;min-height:48px;flex-shrink:0;border-bottom:1px solid var(--border)}
+.topbar .back{color:var(--muted);font-size:.9rem;cursor:pointer;padding:4px 0;z-index:1}
+.topbar .title{font-size:.95rem;font-weight:600;color:#fff}
+.topbar .badge{font-size:.75rem;color:var(--muted);background:var(--surface);padding:2px 8px;border-radius:10px;z-index:1}
+.topbar .qnav{font-size:.88rem;color:var(--accent);cursor:pointer;z-index:1}
+.topbar .qnav.centered{position:absolute;left:50%;transform:translateX(-50%);font-size:1.05rem;font-weight:600;color:var(--muted)}
+.topbar .qnav.centered .qc{color:var(--accent);font-weight:700}
+.screen{flex:1;overflow-y:auto;overflow-x:hidden;display:none;flex-direction:column}
+.screen.active{display:flex}
+/* Home */
+#screen-home{padding:24px 16px;gap:0}
+#screen-home .brand{text-align:center;padding:16px 0 24px;flex-shrink:0}
+#screen-home .brand h1{font-size:1.3rem;color:#fff;margin-bottom:4px}
+#screen-home .brand p{font-size:.85rem;color:var(--muted)}
+.home-act{display:flex;gap:12px;padding:0 0 24px;flex-shrink:0;justify-content:center}
+.home-act .btn{flex:1;max-width:160px;padding:18px 12px;border-radius:var(--radius);border:none;font-size:.95rem;font-weight:600;cursor:pointer;text-align:center;-webkit-appearance:none;display:flex;flex-direction:column;align-items:center;gap:6px}
+.home-act .btn.cam{background:var(--accent);color:#fff}
+.home-act .btn.gal{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.home-act .btn .ic{font-size:1.8rem;line-height:1}
+.home-act .btn .lb{font-size:.85rem}
+.home-hint{text-align:center;font-size:.8rem;color:var(--muted);padding-bottom:24px;flex-shrink:0}
+@media(hover:hover)and(pointer:fine){.home-hint .dt{display:inline}}
+/* History list */
+.hist{border-top:1px solid var(--border);flex:1;overflow-y:auto;min-height:0}
+.hist h3{font-size:.85rem;color:var(--muted);margin:0;font-weight:500;position:sticky;top:0;background:var(--bg);z-index:2;padding:16px 0 12px}
+.hi{padding:12px;background:var(--surface);border-radius:var(--radius);margin-bottom:8px;cursor:pointer;border:1px solid transparent;transition:.15s}
+.hi:active{border-color:var(--accent)}
+.hi .hiline1{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.hi .date{font-size:.75rem;color:var(--muted);min-width:44px}
+.hi .tag{font-size:.72rem;color:var(--accent);font-weight:500;background:rgba(99,102,241,.15);padding:1px 6px;border-radius:6px}
+.hi .tag.variant{color:var(--warn);background:rgba(245,158,11,.15)}
+.hi .preview{font-size:.8rem;color:var(--muted);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}
+.hist-more{text-align:center;padding:12px 0 24px}
+.hist-more button{background:var(--surface);color:var(--accent);border:1px solid var(--border);padding:8px 32px;border-radius:20px;font-size:.85rem;cursor:pointer}
+.hist-more button:disabled{color:var(--border);cursor:default}
+/* Processing */
+#screen-processing{align-items:center;justify-content:center;text-align:center;padding:24px}
+.pipe{display:flex;align-items:flex-start;justify-content:center;gap:0;margin-bottom:24px}
+.ps{display:flex;flex-direction:column;align-items:center;gap:8px;width:72px}
+.pi{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2rem;background:var(--surface);border:2px solid var(--border);transition:.3s}
+.ps.active .pi{border-color:var(--accent);background:rgba(99,102,241,.15);box-shadow:0 0 12px rgba(99,102,241,.3);animation:pulse 1.5s ease infinite}
+.ps.done .pi{border-color:var(--success);background:rgba(34,197,94,.15)}
+.ps.error .pi{border-color:var(--error);background:rgba(239,68,68,.15)}
+@keyframes pulse{0%,100%{box-shadow:0 0 8px rgba(99,102,241,.2)}50%{box-shadow:0 0 20px rgba(99,102,241,.5)}}
+.plb{font-size:.75rem;color:var(--muted);transition:.3s}
+.ps.active .plb{color:var(--accent);font-weight:600}
+.ps.done .plb{color:var(--success)}
+.pln{width:24px;height:2px;background:var(--border);margin-top:21px;transition:.3s;flex-shrink:0}
+.pln.done{background:var(--success)}
+.pst{font-size:.95rem;color:#fff;margin-bottom:4px}
+.psd{font-size:.82rem;color:var(--muted)}
+/* Warning / Variant banners */
+.warn-banner{background:rgba(245,158,11,.15);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;margin:0 16px 8px;font-size:.82rem;color:var(--warn);display:none}
+.warn-banner.show{display:block}
+.variant-banner{background:rgba(99,102,241,.12);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;margin:0 16px 8px;font-size:.82rem;color:var(--accent);display:none}
+.variant-banner.show{display:block}
+/* Review */
+#screen-review{overflow:hidden;position:relative}
+.cc{flex:1;position:relative;overflow:hidden}
+.ct{display:flex;height:100%;transition:transform .3s cubic-bezier(.25,.1,.25,1);will-change:transform}
+.card{flex:0 0 100%;height:100%;overflow-y:auto;overflow-x:hidden;padding:16px 16px calc(60px + var(--safe-bottom));-webkit-overflow-scrolling:touch}
+.card h2{font-size:1rem;color:var(--accent);margin-bottom:8px}
+/* Passage block */
+.passage-block{background:var(--surface);border-radius:8px;padding:0;margin:0 0 12px;overflow:hidden}
+.passage-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer;font-size:.85rem;color:var(--muted);gap:8px}
+.passage-header .ar{font-size:.7rem;transition:transform .2s}
+.passage-block.open .passage-header .ar{transform:rotate(180deg)}
+.passage-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.passage-block.open .passage-body{grid-template-rows:1fr}
+.passage-text{padding:0 12px 12px;overflow:hidden;font-size:.82rem;line-height:1.7;color:var(--text);font-family:monospace;white-space:pre-wrap;word-break:break-word}
+/* Module */
+.mod{margin-bottom:4px;border-bottom:1px solid transparent}
+.mh{display:flex;align-items:center;justify-content:space-between;padding:12px 0;cursor:pointer;min-height:44px;font-size:.92rem;font-weight:600;color:#c7d2fe;-webkit-user-select:none;user-select:none;gap:8px}
+.mh .mh-label{flex:1}
+.mh .mh-tts{font-size:.85rem;opacity:.5;cursor:pointer;padding:2px 6px;border-radius:4px;transition:.15s;flex-shrink:0}
+.mh .mh-tts:hover{opacity:1;background:var(--surface)}
+.mh .ar{font-size:.8rem;color:var(--muted);transition:transform .2s}
+.mod.open .mh .ar{transform:rotate(180deg)}
+.mb{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease;overflow:hidden}
+.mbi{overflow:hidden;min-height:0;font-size:.9rem;line-height:1.75;color:var(--text);border-left:2px solid transparent}
+.mod.open .mb{grid-template-rows:1fr}
+.mod.open .mbi{padding:0 0 12px 12px;border-left-color:var(--border)}
+.mbi u,.mbi mark{color:#fbbf24;text-decoration:underline;text-underline-offset:3px;background:transparent}
+.mbi strong{color:#fff}
+.mbi .ans{color:#22c55e;font-weight:700}
+/* Source context (per-card) */
+.src-block{background:var(--surface);border-radius:8px;padding:0;margin:8px 0}
+.src-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:pointer;font-size:.8rem;color:var(--muted)}
+.src-header .ar{font-size:.7rem;transition:transform .2s}
+.src-block.open .src-header .ar{transform:rotate(180deg)}
+.src-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.src-block.open .src-body{grid-template-rows:1fr}
+.src-text{padding:0 12px 10px;overflow:hidden;font-size:.78rem;line-height:1.6;color:var(--muted);font-family:monospace;white-space:pre-wrap;word-break:break-word}
+/* Bottom nav */
+.bnav{display:flex;align-items:center;justify-content:center;padding:10px 16px calc(10px + var(--safe-bottom));gap:16px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg)}
+.bnav .nb{color:var(--accent);font-size:.95rem;cursor:pointer;padding:8px 12px;border:none;background:none;min-width:44px;text-align:center;-webkit-appearance:none}
+.bnav .nb:disabled{color:var(--border);cursor:default}
+.bnav .nb.play-btn{background:var(--accent);color:#fff;border-radius:20px;padding:6px 18px;font-size:.9rem}
+.bnav .nb.play-btn.playing{background:var(--playing)}
+.bnav .dots{display:flex;gap:6px;align-items:center;overflow-x:auto;max-width:120px}
+.bnav .dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:.2s;flex-shrink:0;cursor:pointer}
+.bnav .dot.done{background:var(--accent)}
+.bnav .dot.cur{background:var(--accent);width:10px;height:10px}
+/* TTS active highlight */
+.tts-active{background:rgba(168,85,247,.25)!important;border-radius:4px;transition:.2s}
+/* Overlay */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10;display:none;align-items:flex-end;justify-content:center}
+.overlay.show{display:flex}
+.osheet{width:100%;max-width:480px;max-height:70vh;background:var(--surface);border-radius:16px 16px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));overflow-y:auto}
+.osheet h3{font-size:1rem;color:#fff;margin-bottom:12px}
+.oi{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:44px;font-size:.9rem}
+.oi .qn{color:var(--muted);margin-right:8px}
+.oi .qt{flex:1;color:var(--text)}
+.oi .qs{font-size:.8rem}
+.oi .qs.seen{color:var(--success)}
+.oi.cur{background:rgba(99,102,241,.1);border-radius:8px;padding-left:8px;padding-right:8px}
+.err-box{text-align:center;padding:40px 24px}
+.err-box .msg{font-size:.95rem;color:var(--error);margin-bottom:16px}
+.err-box .retry{padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:.95rem;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="topbar" id="topbar">
+    <span class="back" id="btn-back" style="visibility:hidden">← 返回</span>
+    <span class="title" id="title">📝 Exam Tutor</span>
+    <span class="qnav" id="btn-ov" style="display:none">第 1 题</span>
+    <span class="badge" id="badge" style="display:none"></span>
+  </div>
+
+  <!-- Screen: Home -->
+  <div class="screen active" id="screen-home">
+    <div class="brand"><h1>📝 Exam Tutor</h1><p>拍照上传 · 逐题精讲 · 初中英语</p></div>
+    <div class="home-act">
+      <label class="btn cam" for="cam-in"><span class="ic">📷</span><span class="lb">拍照上传</span></label>
+      <input type="file" id="cam-in" accept="image/*" capture="environment" style="position:absolute;opacity:0;width:0;height:0" onchange="handleFiles(this)">
+      <label class="btn gal" for="file-in"><span class="ic">🖼️</span><span class="lb">从相册选择</span></label>
+      <input type="file" id="file-in" accept="image/*" multiple style="position:absolute;opacity:0;width:0;height:0" onchange="handleFiles(this)">
+    </div>
+    <div class="home-hint"><span class="dt" style="display:none">💡 也可以 Ctrl+V 粘贴截图</span></div>
+    <div class="hist" id="hist-sec"><h3>最近</h3><div id="hist-list"></div><div class="hist-more" id="hist-more" style="display:none"><button id="hist-more-btn" onclick="loadMore()">加载更多</button></div></div>
+  </div>
+
+  <!-- Screen: Processing -->
+  <div class="screen" id="screen-processing">
+    <div class="pipe">
+      <div class="ps" id="s-up"><div class="pi">📤</div><div class="plb">上传</div></div>
+      <div class="pln" id="ln1"></div>
+      <div class="ps" id="s-ocr"><div class="pi">🔍</div><div class="plb">识别</div></div>
+      <div class="pln" id="ln2"></div>
+      <div class="ps" id="s-llm"><div class="pi">🧠</div><div class="plb">精讲</div></div>
+    </div>
+    <div class="pst" id="pst">正在准备…</div>
+    <div class="psd" id="psd"></div>
+  </div>
+
+  <!-- Screen: Review -->
+  <div class="screen" id="screen-review">
+    <div class="warn-banner" id="warn-banner"></div>
+    <div class="variant-banner" id="variant-banner"></div>
+    <div class="passage-block" id="passage-block" style="display:none">
+      <div class="passage-header" onclick="this.parentElement.classList.toggle('open')">
+        <span>📄 原文</span>
+        <span class="mh-tts" onclick="event.stopPropagation();ttsSpeakText(passageText)" title="朗读原文">🔊</span>
+        <span class="ar">▼</span>
+      </div>
+      <div class="passage-body"><div class="passage-text" id="passage-text"></div></div>
+    </div>
+    <div class="cc" id="cc"><div class="ct" id="ct"></div></div>
+    <div class="bnav" id="bnav">
+      <button class="nb" id="btn-prev" disabled>←</button>
+      <div class="dots" id="dots"></div>
+      <button class="nb" id="btn-next">→</button>
+      <button class="nb play-btn" id="btn-play" onclick="ttsPlayCard()" style="display:none">▶ 朗读</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="osheet" id="osheet"><h3>题目列表</h3><div id="olist"></div></div>
+  </div>
+</div>
+
+<script>
+// ── Config (loaded from /api/config on page load) ──
+let apiBase='',pageSize=20,allowedTypes=[],_configOK=false;
+let exams=[],ci=0,visited=new Set(),tsx=0,tsy=0,examId=null,examType='',variant='';
+let _doneReceived=false,passageText='',s1Questions=[];
+let histPage=1,histDone=false;
+const MAX_SIDE=1920,JPEG_QUALITY=0.8,MAX_RAW_SIZE=50*1024*1024;
+const TYPE_LABEL={grammar_cloze:'语法选择',cloze:'完形填空',reading_comp:'阅读理解',true_false:'正误判断'};
+const VARIANT_LABEL={open_ended:'开放型填空'};
+const MODULE_ORDER={
+  '上下文':['上下文','生词洞察','选项词义','考点','解析','排除法'],
+  '题干定位':['题干定位','选项词义','考点','解析','排除法'],
+  '原句/题干':['原句/题干','原文依据','考点','解析'],
+  '上下文_open':['上下文','生词洞察','考点','解析','推断思路'],
+  '题干定位_open':['题干定位','考点','解析','推断思路'],
+};
+const DEFAULTS_OPEN=['解析','上下文','题干定位','原句/题干','推断思路'];
+const TTS_AUTO={cloze:['解析','考点','上下文'],reading:['解析','考点','题干定位'],tf:['解析','考点','原句/题干','原文依据']};
+const TTS_MANUAL=['生词洞察'];
+
+function getTTSAutoSeq(){
+  if(examType==='grammar_cloze'||examType==='cloze')return TTS_AUTO.cloze;
+  if(examType==='reading_comp')return TTS_AUTO.reading;
+  if(examType==='true_false')return TTS_AUTO.tf;
+  return[];
+}
+const RELATIVE_DAY=86400000;
+
+function ss(n){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el=document.getElementById('screen-'+n);if(el)el.classList.add('active');
+  const bb=document.getElementById('btn-back'),ti=document.getElementById('title'),
+        bd=document.getElementById('badge'),bo=document.getElementById('btn-ov');
+  bb.style.visibility='visible';bd.style.display='none';bo.style.display='none';bo.classList.remove('centered');
+  if(n==='home'){ti.textContent='📝 Exam Tutor';bb.style.visibility='hidden';loadHist(true)}
+  else if(n==='processing'){ti.textContent=''}
+  else if(n==='review'){
+    ti.textContent='';bo.style.display='block';bo.classList.add('centered');
+    if(examType){
+      bd.style.display='block';
+      let label=TYPE_LABEL[examType]||examType;
+      if(variant&&variant!=='multiple_choice')label+=' · '+(VARIANT_LABEL[variant]||variant);
+      bd.textContent=label;
+    }
+  }
+}
+
+function setExamType(t){examType=t}
+function setVariant(v){variant=v}
+
+function setStep(id){
+  ['s-up','s-ocr','s-llm'].forEach((s,i)=>{
+    const el=document.getElementById(s);el.classList.remove('active','done','error');
+    const idx=['s-up','s-ocr','s-llm'].indexOf(id);
+    if(i<idx)el.classList.add('done');if(i===idx)el.classList.add('active');
+  });
+  ['ln1','ln2'].forEach((l,i)=>{
+    document.getElementById(l).classList.toggle('done',i<['s-up','s-ocr','s-llm'].indexOf(id))
+  });
+}
+
+function relDate(iso){
+  const d=new Date(iso+'Z'),now=new Date();
+  const diff=now-d;
+  if(diff<RELATIVE_DAY)return '今天';
+  if(diff<RELATIVE_DAY*2)return '昨天';
+  if(diff<RELATIVE_DAY*7)return Math.floor(diff/RELATIVE_DAY)+'天前';
+  return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric'});
+}
+
+// ── Image Preprocessing ──
+
+async function preprocessImage(file){
+  if(file.size>=MAX_RAW_SIZE){throw new Error('图片过大（'+(file.size/1048576).toFixed(1)+' MB），请在相册中选择已压缩的版本。')}
+  try{
+    const bmp=await createImageBitmap(file);
+    if(bmp.width<=MAX_SIDE&&bmp.height<=MAX_SIDE){bmp.close();return file}
+    const scale=Math.min(MAX_SIDE/Math.max(bmp.width,bmp.height),1.0);
+    const c=document.createElement('canvas');
+    c.width=Math.round(bmp.width*scale);c.height=Math.round(bmp.height*scale);
+    const ctx=c.getContext('2d');ctx.drawImage(bmp,0,0,c.width,c.height);bmp.close();
+    return await new Promise((resolve,reject)=>{
+      c.toBlob(blob=>{
+        if(blob){resolve(new File([blob],file.name,{type:'image/jpeg'}));return}
+        try{
+          const dataUrl=c.toDataURL('image/jpeg',JPEG_QUALITY);
+          const byteStr=atob(dataUrl.split(',')[1]);
+          const ab=new ArrayBuffer(byteStr.length);
+          const ua=new Uint8Array(ab);
+          for(let i=0;i<byteStr.length;i++)ua[i]=byteStr.charCodeAt(i);
+          resolve(new File([ab],file.name,{type:'image/jpeg'}));
+        }catch(e2){reject(new Error('图片处理失败，请尝试重新拍摄。'))}
+      },'image/jpeg',JPEG_QUALITY);
+    });
+  }catch(e){throw new Error('图片格式不支持或文件已损坏，请转换为 JPG 或 PNG。')}
+}
+
+async function preprocessImages(files){
+  const processed=[],errors=[];
+  for(const f of Array.from(files)){
+    try{processed.push(await preprocessImage(f))}catch(e){errors.push({name:f.name,reason:e.message})}
+  }
+  if(errors.length){
+    if(processed.length===0){
+      throw new Error(errors.map(e=>e.reason).filter((v,i,a)=>a.indexOf(v)===i).join('；'));
+    }
+    document.getElementById('psd').textContent=
+      processed.length+'/'+files.length+' 张处理成功（'+errors.map(e=>e.name).join('、')+' 失败）';
+  }
+  return processed;
+}
+
+// ── Handle file selection ──
+
+function handleFiles(inputEl){
+  try{
+    const files=Array.from(inputEl.files);  // Snapshot before clearing — FileList is live
+    inputEl.value='';
+    if(!files.length)return;
+    _doneReceived=false;
+    up(files);
+  }catch(e){
+    document.getElementById('pst').textContent='❌ 上传异常';
+    document.getElementById('psd').textContent=e.message;
+    ss('processing');
+  }
+}
+
+async function up(files){
+  if(!files.length)return;
+  ss('processing');setStep('s-up');
+  document.getElementById('pst').textContent='正在处理图片…';
+  document.getElementById('psd').textContent=files.length+' 张';
+  let uploadFiles;
+  try{
+    uploadFiles=await preprocessImages(files);
+    document.getElementById('psd').textContent=uploadFiles.length+' 张（已优化）';
+  }catch(e){se(e.message,true);return}
+  document.getElementById('pst').textContent='正在上传…';
+  const fd=new FormData();
+  uploadFiles.forEach(f=>fd.append('images',f));
+  try{
+    const r=await fetch(apiBase+'/exams',{method:'POST',body:fd});
+    const body=await r.json().catch(()=>({}));
+    if(body.error){se(body.error,true);return}
+    if(!body.session_id){se('服务响应异常，请重试',true);return}
+    const session_id=body.session_id;
+    setStep('s-ocr');document.getElementById('pst').textContent='正在识别试卷文字…';document.getElementById('psd').textContent='';
+    const es=new EventSource(apiBase+'/sse/ui?session='+session_id);
+    es.onmessage=e=>{
+      const d=JSON.parse(e.data);
+      switch(d.stage){
+        case'connected':break;
+        case'ocr':
+          if(d.status==='start'){setStep('s-ocr');document.getElementById('pst').textContent='正在识别试卷文字…'}
+          else if(d.status==='done'){setStep('s-llm');document.getElementById('pst').textContent='正在分析试卷结构…';document.getElementById('psd').textContent=d.method||''}
+          break;
+        case'stage1':
+          if(d.status==='done'){
+            setStep('s-llm');
+            document.getElementById('pst').textContent='正在逐题生成精讲…';
+            setVariant(d.variant||'');
+            document.getElementById('psd').textContent='共 '+d.question_count+' 题，题型：'+(TYPE_LABEL[d.exam_type]||d.exam_type);
+          }
+          break;
+        case'stage2':
+          if(d.status==='progress'){document.getElementById('psd').textContent='AI 正在深度思考中…'}
+          else if(d.status==='done'){
+            _doneReceived=true;es.close();
+            renderReviewData(reviewDataFromSSE(d));
+          }
+          break;
+        case'error':es.close();se(d.message,d.recoverable);break;
+      }
+    };
+    let _sseErrors=0;
+    es.onerror=()=>{
+      if(es.readyState===EventSource.CLOSED)return;
+      if(++_sseErrors>=3){es.close();if(!_doneReceived)se('连接多次中断，请重试',true);}
+    };
+    es.onopen=()=>{_sseErrors=0;};
+  }catch(err){se('网络错误，请检查连接后重试',true)}
+}
+
+function se(msg,retry){
+  ss('processing');
+  document.getElementById('pst').textContent='❌ 出错了';
+  document.getElementById('psd').innerHTML=
+    '<div class="err-box"><div class="msg">'+msg+'</div>'+
+    (retry?'<button class="retry" onclick="ss(\'home\')">返回重试</button>':'')+'</div>';
+}
+
+// ── Review data contract (L0) ──
+// All review rendering goes through ONE entry point: renderReviewData(rd)
+// rd shape: {questions, exam_id, exam_type, variant, passage, s1_questions, warnings}
+
+function reviewDataFromSSE(d){
+  return{questions:d.questions||[],exam_id:d.exam_id||'',exam_type:d.exam_type||'',
+    variant:d.variant||'',passage:d.passage||'',s1_questions:d.s1_questions||[],warnings:d.warnings||[]};
+}
+
+function reviewDataFromDB(e){
+  return{questions:e.tutorial?JSON.parse(e.tutorial):[],exam_id:e.id||'',
+    exam_type:e.exam_type||'',variant:e.variant||'',passage:e.passage||'',
+    s1_questions:e.s1_questions?JSON.parse(e.s1_questions):[],warnings:[]};
+}
+
+function renderReviewData(rd){
+  examId=rd.exam_id;setExamType(rd.exam_type);setVariant(rd.variant);
+  passageText=rd.passage;s1Questions=rd.s1_questions;
+  ss('review');
+  renderCards(rd.questions);
+  const pb=document.getElementById('passage-block');
+  if(passageText){document.getElementById('passage-text').textContent=passageText;
+    pb.style.display='block';pb.classList.remove('open');}
+  else{pb.style.display='none';}
+  document.getElementById('btn-play').style.display='block';
+  document.getElementById('btn-play').classList.remove('playing');
+  const vs=ttsVoicesOK();
+  if(vs==='loading'){setTimeout(()=>{
+    const vs2=ttsVoicesOK();if(vs2!=='ok'&&vs2!=='unsupported')document.getElementById('btn-play').title=vs2==='no-zh'?'缺少中文语音包':'缺少英文语音包';
+  },1000);}
+  else if(vs!=='ok'){
+    document.getElementById('btn-play').disabled=true;
+    document.getElementById('btn-play').style.opacity='0.4';
+    document.getElementById('btn-play').title=vs==='unsupported'?'此浏览器不支持语音朗读':vs==='no-zh'?'设备缺少中文语音，无法朗读':'设备缺少英文语音，无法朗读';
+  }
+  document.getElementById('warn-banner').classList.remove('show');
+  document.getElementById('variant-banner').classList.remove('show');
+  if(rd.warnings&&rd.warnings.length){
+    document.getElementById('warn-banner').textContent=rd.warnings.join('; ');
+    document.getElementById('warn-banner').classList.add('show');
+  }
+  if(rd.variant==='open_ended'){
+    document.getElementById('variant-banner').textContent='📌 本题为开放型填空，答案为 AI 根据上下文推断，建议核对标准答案。';
+    document.getElementById('variant-banner').classList.add('show');
+  }
+}
+
+function renderCards(qs){exams=qs;visited=new Set();ci=0;ttsStop();
+  const tr=document.getElementById('ct'),dots=document.getElementById('dots');
+  tr.innerHTML='';dots.innerHTML='';
+  qs.forEach((q,i)=>{
+    const d=document.createElement('span');d.className='dot';d.onclick=()=>go(i);dots.appendChild(d);
+    const c=document.createElement('div');c.className='card';
+    c.innerHTML=rc(q,i);c.addEventListener('touchstart',ts,{passive:true});c.addEventListener('touchend',te,{passive:true});
+    tr.appendChild(c);
+  });
+  go(0);
+}
+
+function rc(q,i){
+  const m=q.modules;let o=getMO(m,variant);let h='<h2>第 '+q.number+' 题</h2>';
+  if(variant==='open_ended'&&q.answer)h+='<div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">答案：<span class="ans">'+q.answer+'</span></div>';
+  for(const n of o){
+    if(!m[n])continue;const c=md(m[n]);const op=DEFAULTS_OPEN.includes(n);
+    const canTTS=getTTSAutoSeq().includes(n)||TTS_MANUAL.includes(n);
+    h+='<div class="mod'+(op?' open':'')+'"><div class="mh" onclick="tm(this.parentElement)"><span class="mh-label">'+n+'</span>'+
+      (canTTS?'<span class="mh-tts" onclick="event.stopPropagation();ttsSpeakModule(\''+
+        n.replace(/'/g,"\\'")+'\','+i+')" title="朗读">🔊</span>':'')+
+      '<span class="ar">▼</span></div><div class="mb"><div class="mbi" id="mod-'+i+'-'+n+'">'+c+'</div></div></div>';
+  }
+  // Source context block (per-card)
+  if(s1Questions[i]){
+    const sq=s1Questions[i];
+    const src=[sq.context_before,sq.sentence_with_blank,sq.context_after].filter(Boolean);
+    if(src.length){
+      h+='<div class="src-block"><div class="src-header" onclick="this.parentElement.classList.toggle(\'open\')"><span>📎 原始文本</span><span class="ar">▼</span></div>';
+      h+='<div class="src-body"><div class="src-text">'+src.join('\n')+'</div></div></div>';
+    }
+  }
+  return h;
+}
+
+function getMO(m,v){
+  if(v==='open_ended'){
+    if('上下文'in m)return MODULE_ORDER['上下文_open'];
+    if('题干定位'in m)return MODULE_ORDER['题干定位_open'];
+  }
+  if('上下文'in m)return MODULE_ORDER['上下文'];
+  if('题干定位'in m)return MODULE_ORDER['题干定位'];
+  if('原句/题干'in m)return MODULE_ORDER['原句/题干'];
+  return Object.keys(m);
+}
+
+function md(t){return t?t.replace(/<u>(.+?)<\/u>/g,'<u>$1</u>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/❌/g,'❌').replace(/\n/g,'<br>'):''}
+
+function tm(el){el.classList.toggle('open')}
+
+function go(i){
+  if(i<0||i>=exams.length)return;ci=i;visited.add(i);
+  document.getElementById('ct').style.transform='translateX(-'+(i*100)+'%)';
+  document.querySelectorAll('#dots .dot').forEach((d,j)=>{
+    d.className='dot';if(j<i)d.classList.add('done');if(j===i)d.classList.add('cur');if(visited.has(j)&&j>i)d.classList.add('done');
+  });
+  document.getElementById('btn-ov').innerHTML='第 <span class="qc">'+exams[i].number+'</span>/'+exams.length+' 题';
+  document.getElementById('btn-prev').disabled=i===0;document.getElementById('btn-next').disabled=i>=exams.length-1;
+}
+
+function ts(e){tsx=e.touches[0].clientX;tsy=e.touches[0].clientY}
+function te(e){
+  const dx=e.changedTouches[0].clientX-tsx,dy=e.changedTouches[0].clientY-tsy;
+  if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>50){if(dx<0&&ci<exams.length-1)go(ci+1);else if(dx>0&&ci>0)go(ci-1)}
+}
+
+function so(){
+  document.getElementById('olist').innerHTML=exams.map((q,i)=>{
+    const is=i===ci;
+    return'<div class="oi'+(is?' cur':'')+'" onclick="go('+i+');ho()"><span class="qn">'+q.number+'.</span><span class="qt">'+((q.modules['解析']||q.modules['上下文']||'').split('\n')[0].replace(/\*\*/g,'').substring(0,30))+'</span><span class="qs'+(visited.has(i)?' seen':'')+'">'+(visited.has(i)?'✓':'')+'</span></div>';
+  }).join('');
+  document.getElementById('overlay').classList.add('show');
+}
+function ho(){document.getElementById('overlay').classList.remove('show')}
+
+// ── History ──
+
+async function loadHist(reset){
+  if(reset){histPage=1;histDone=false;document.getElementById('hist-list').innerHTML='';document.getElementById('hist-more').style.display='none'}
+  try{
+    const r=await fetch(apiBase+'/exams?page='+histPage);
+    const{items,total}=await r.json();
+    if(!items.length){histDone=true;
+      if(reset){document.getElementById('hist-sec').style.display='none'}
+      else{document.getElementById('hist-more').style.display='none'}
+      return;
+    }
+    document.getElementById('hist-sec').style.display='block';
+    const el=document.getElementById('hist-list');
+    items.forEach(i=>{
+      const preview=(i.passage||'').replace(/\n/g,' ').substring(0,50);
+      let tags='<span class="tag">'+(TYPE_LABEL[i.exam_type]||i.exam_type)+'</span>';
+      if(i.variant&&i.variant!=='multiple_choice')tags+=' <span class="tag variant">'+(VARIANT_LABEL[i.variant]||i.variant)+'</span>';
+      if(i.question_count)tags+=' <span class="tag">'+i.question_count+'题</span>';
+      el.insertAdjacentHTML('beforeend',
+        '<div class="hi" onclick="lx(\''+i.id+'\')"><div class="hiline1"><span class="date">'+relDate(i.created_at)+'</span>'+tags+'</div>'+
+        (preview?'<div class="preview">'+preview+'</div>':'')+'</div>'
+      );
+    });
+    const loaded=histPage*pageSize;
+    histPage++;
+    if(items.length>=pageSize&&(loaded+items.length)<total){
+      document.getElementById('hist-more').style.display='block';
+      document.getElementById('hist-more-btn').disabled=false;
+    }else{histDone=true;document.getElementById('hist-more').style.display='none'}
+  }catch(e){document.getElementById('hist-sec').style.display='none'}
+}
+
+function loadMore(){
+  if(histDone)return;
+  document.getElementById('hist-more-btn').disabled=true;
+  loadHist(false);
+}
+
+async function lx(id){
+  _doneReceived=false;ttsStop();ss('processing');
+  document.getElementById('pst').textContent='正在加载…';
+  try{
+    const r=await fetch(apiBase+'/exams/'+id);const e=await r.json();
+    if(e.tutorial){
+      renderReviewData(reviewDataFromDB(e));
+    }else{se('该记录缺少精讲内容',false)}
+  }catch(e){se('加载失败',false)}
+}
+
+// ── TTS ──
+
+let ttsQueue=[],ttsPlaying=false,ttsCardIdx=-1;
+let _ttsVoices=[],_ttsVoicesReady=false,_ttsSupported=false;
+try{_ttsSupported=typeof speechSynthesis!=='undefined'&&!!speechSynthesis;}catch(e){}
+
+if(_ttsSupported){
+  try{
+    speechSynthesis.onvoiceschanged=()=>{_ttsVoices=speechSynthesis.getVoices();_ttsVoicesReady=true;};
+    _ttsVoices=speechSynthesis.getVoices();
+    if(_ttsVoices.length>0)_ttsVoicesReady=true;
+  }catch(e){_ttsSupported=false;}
+}
+
+function ttsVoicesOK(){
+  if(!_ttsSupported)return'unsupported';
+  if(!_ttsVoicesReady)return'loading';
+  const en=_ttsVoices.some(v=>v.lang.startsWith('en'));
+  const zh=_ttsVoices.some(v=>v.lang.startsWith('zh'));
+  return en&&zh?'ok':en?'no-zh':'no-en';
+}
+
+function ttsSplit(text){
+  // State machine: extract segments, skip phonetic notation /.../
+  const segments=[];
+  let i=0;
+  while(i<text.length){
+    if(text[i]==='\uff0f'){  // U+FF0F fullwidth solidus — phonetic boundary
+      let j=i+1;
+      while(j<text.length&&text[j]!=='\uff0f')j++;
+      if(j<text.length){i=j+1;continue;}  // matched pair — skip phonetic block
+      i++;continue;  // unmatched — skip just this char
+    }
+    if(/[a-zA-Z]/.test(text[i])){
+      let j=i;
+      while(j<text.length&&/[a-zA-Z]/.test(text[j]))j++;
+      segments.push({text:text.slice(i,j),lang:'en-US'});
+      i=j;continue;
+    }
+    if(/[\u4e00-\u9fff]/.test(text[i])){
+      let j=i;
+      while(j<text.length&&/[\u4e00-\u9fff]/.test(text[j]))j++;
+      segments.push({text:text.slice(i,j),lang:'zh-CN'});
+      i=j;continue;
+    }
+    // Punctuation / whitespace — attach to previous or standalone as zh-CN pause
+    let j=i;
+    while(j<text.length&&!/[a-zA-Z\u4e00-\u9fff]/.test(text[j]))j++;
+    const punct=text.slice(i,j).trim();
+    if(punct)segments.push({text:punct,lang:'zh-CN'});
+    i=j;
+  }
+  return segments;
+}
+
+function ttsBuildQueue(texts){
+  ttsQueue=[];
+  for(const raw of texts){
+    const clean=raw.replace(/<[^>]+>/g,'').replace(/❌/g,'').replace(/\*\*/g,'').trim();
+    if(!clean)continue;
+    const segs=ttsSplit(clean);
+    for(const s of segs)ttsQueue.push(s);
+  }
+}
+
+function ttsPlayQueue(){
+  if(ttsQueue.length===0){ttsOnEnd();return}
+  ttsPlaying=true;
+  const seg=ttsQueue.shift();
+  const u=new SpeechSynthesisUtterance(seg.text);
+  u.lang=seg.lang;u.rate=0.9;
+  u.onend=()=>ttsPlayQueue();
+  u.onerror=()=>ttsPlayQueue();
+  speechSynthesis.speak(u);
+}
+
+function ttsStop(){
+  speechSynthesis.cancel();ttsQueue=[];ttsPlaying=false;ttsCardIdx=-1;
+  document.getElementById('btn-play').classList.remove('playing');
+  document.querySelectorAll('.tts-active').forEach(el=>el.classList.remove('tts-active'));
+}
+
+function ttsOnEnd(){
+  ttsPlaying=false;ttsCardIdx=-1;
+  document.getElementById('btn-play').classList.remove('playing');
+  document.querySelectorAll('.tts-active').forEach(el=>el.classList.remove('tts-active'));
+}
+
+function ttsSpeakCard(idx){
+  if(ttsPlaying)ttsStop();
+  const q=exams[idx];if(!q)return;
+  const m=q.modules;
+  const texts=[];
+  const seq=getTTSAutoSeq();
+  for(const mod of seq){if(m[mod])texts.push(m[mod])}
+  if(texts.length===0)return;
+  ttsCardIdx=idx;
+  ttsBuildQueue(texts);
+  document.getElementById('btn-play').classList.add('playing');
+  ttsPlayQueue();
+}
+
+function ttsPlayCard(){
+  // ▶ button
+  if(ttsPlaying){ttsStop();return}
+  ttsSpeakCard(ci);
+}
+
+function ttsSpeakModule(name,idx){
+  if(ttsPlaying)ttsStop();
+  const q=exams[idx];if(!q)return;
+  const text=q.modules[name];if(!text)return;
+  ttsCardIdx=idx;
+  ttsBuildQueue([text]);
+  document.getElementById('btn-play').classList.add('playing');
+  // Highlight active module
+  const el=document.getElementById('mod-'+idx+'-'+name);
+  if(el)el.classList.add('tts-active');
+  ttsPlayQueue();
+}
+
+function ttsSpeakText(text){
+  if(ttsPlaying)ttsStop();
+  if(!text)return;
+  ttsCardIdx=-1;
+  ttsBuildQueue([text]);
+  document.getElementById('btn-play').classList.add('playing');
+  ttsPlayQueue();
+}
+
+// ── Event bindings ──
+
+document.getElementById('btn-back').onclick=()=>{ttsStop();ss('home')};
+document.getElementById('btn-prev').onclick=()=>go(ci-1);
+document.getElementById('btn-next').onclick=()=>go(ci+1);
+document.getElementById('btn-ov').onclick=()=>so();
+document.getElementById('overlay').onclick=function(e){if(e.target===this)ho()};
+document.addEventListener('keydown',e=>{
+  if(document.getElementById('screen-review').classList.contains('active')){
+    if(e.key==='ArrowRight'&&ci<exams.length-1)go(ci+1);
+    if(e.key==='ArrowLeft'&&ci>0)go(ci-1);
+    if(e.key==='Escape')ho();
+  }
+});
+document.addEventListener('paste',e=>{
+  const it=e.clipboardData?.items;if(!it)return;
+  const fs=[];for(const i of it){if(i.type.startsWith('image/')){const f=i.getAsFile();if(f)fs.push(f)}}
+  if(fs.length){e.preventDefault();_doneReceived=false;up(fs)}
+});
+if('serviceWorker'in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
+
+// ── Load config from server ──
+async function initConfig(){
+  try{
+    const r=await fetch('/api/config');
+    const cfg=await r.json();
+    if(cfg.api_base!=null)apiBase=cfg.api_base;
+    if(cfg.page_size)pageSize=cfg.page_size;
+    if(cfg.allowed_types&&cfg.allowed_types.length){
+      allowedTypes=cfg.allowed_types;
+      const accept=allowedTypes.join(',');
+      document.getElementById('cam-in').accept=accept;
+      document.getElementById('file-in').accept=accept;
+    }
+    _configOK=true;
+  }catch(e){
+    console.warn('[exam-tutor] Failed to load /api/config, using defaults. API calls may fail.',e);
+  }
+}
+initConfig().then(()=>loadHist(true));
+window.addEventListener('error',e=>{
+  fetch(apiBase+'/debug/client-error',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({message:e.message,filename:e.filename?.split('/').pop(),lineno:e.lineno,colno:e.colno,stack:e.error?.stack?.substring(0,500),userAgent:navigator.userAgent.substring(0,200),href:location.href,time:new Date().toISOString()})
+  }).catch(()=>{})
+});
+window.addEventListener('unhandledrejection',e=>{
+  fetch(apiBase+'/debug/client-error',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({message:'Unhandled Promise: '+(e.reason?.message||String(e.reason)),stack:e.reason?.stack?.substring(0,500),userAgent:navigator.userAgent.substring(0,200),time:new Date().toISOString()})
+  }).catch(()=>{})
+});
+</script>
+</body>
+</html>

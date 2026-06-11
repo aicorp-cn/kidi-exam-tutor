@@ -1,0 +1,69 @@
+# Exam Tutor v5 — Configuration
+# 所有可配置参数的唯一事实源。修改后重启服务生效。
+
+# ═══════════════════════════════════════════════
+# 服务通信层
+# ═══════════════════════════════════════════════
+server:
+  host: "0.0.0.0"
+  port: 8080
+  cors_origins: ["*"]              # 生产环境请改为具体域名，如 ["https://exam.example.com"]
+  api_prefix: ""                   # 反向代理路径前缀，如 "/exam-tutor"（不带末尾斜杠）
+
+# ═══════════════════════════════════════════════
+# 上传约束
+# ═══════════════════════════════════════════════
+upload:
+  max_file_size_mb: 5
+  allowed_types: ["image/jpeg", "image/png", "image/webp"]
+  image_cleanup: true              # 管线结束后删除原图（调试时设为 false）
+
+# ═══════════════════════════════════════════════
+# LLM 调用层 — 全局 → 管线默认 → Stage 覆盖
+# ═══════════════════════════════════════════════
+llm:
+  # ── 全局（所有 Stage 继承）──
+  api_key_env: "DEEPSEEK_API_KEY"  # 密钥从环境变量读取，不写进此文件
+  model: "deepseek-chat"
+  base_url: "https://api.deepseek.com/beta"
+  fallback_url: "https://api.deepseek.com"
+  timeout_s: 120
+  max_retries: 2                   # SDK 层重试
+
+  # ── 管线级公共默认（被 Stage 继承，可被覆盖）──
+  retry_attempts: 2                # 应用层重试次数
+  retry_delay_s: 2.0               # 重试间隔（秒）
+
+  # ── Stage 1：试卷结构化解析 ──
+  stage1:
+    model: "deepseek-v4-flash"
+    temperature: 0.0
+    extra_body:
+      thinking:
+        type: "disabled"
+
+  # ── Stage 2：逐题精讲生成 ──
+  stage2:
+    temperature: 0.3
+    max_tokens: 16384
+    truncation_batch_size: 2       # 输出截断时分片每题数
+    heartbeat_interval_s: 5.0      # SSE 心跳间隔
+
+# ═══════════════════════════════════════════════
+# SSE 配置
+# ═══════════════════════════════════════════════
+sse:
+  heartbeat_timeout: 15.0
+
+# ═══════════════════════════════════════════════
+# 历史列表
+# ═══════════════════════════════════════════════
+history:
+  page_size: 20
+
+# ═══════════════════════════════════════════════
+# 文件系统路径（均为相对项目根或绝对路径）
+# ═══════════════════════════════════════════════
+paths:
+  data_dir: "./data"
+  webui_dir: "./webui"
