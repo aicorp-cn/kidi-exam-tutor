@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 
 const AppContext = createContext(null)
 
@@ -11,14 +11,57 @@ const TTS_AUTO_MAP = {
   true_false: ['解析','考点','原句/题干','原文依据']
 }
 
+// processing is NOT a navigable route — it's a transient state
+const HASH_SCREEN = { '': 'home', '#home': 'home', '#history': 'history', '#review': 'review' }
+const SCREEN_HASH = { home: '#home', history: '#history', review: '#review' }
+
+function getScreenFromHash() {
+  return HASH_SCREEN[window.location.hash] || 'home'
+}
+
 export function AppProvider({ children }) {
-  const [screen, setScreen] = useState('home')
+  const [screen, setScreen] = useState(getScreenFromHash)
   const [pendingFiles, setPendingFiles] = useState(null)
   const [examData, setExamData] = useState(null)
   const [history, setHistory] = useState([])
   const [histPage, setHistPage] = useState(1)
   const [histDone, setHistDone] = useState(false)
   const [config, setConfig] = useState({ apiBase:'', pageSize:20, allowedTypes:[] })
+
+  useEffect(() => {
+    const onHash = () => {
+      const s = getScreenFromHash()
+      if (s === 'processing') return
+      setScreen(s)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  // Refresh safety: restore review data from sessionStorage
+  useEffect(() => {
+    if (screen === 'review' && !examData) {
+      try {
+        const stored = sessionStorage.getItem('exam_review')
+        if (stored) {
+          setExamData(JSON.parse(stored))
+        } else {
+          window.location.hash = '#home'
+        }
+      } catch { window.location.hash = '#home' }
+    }
+  }, [screen, examData])
+
+  const navigate = useCallback((s) => {
+    setScreen(s)
+    const h = SCREEN_HASH[s]
+    if (h && window.location.hash !== h) {
+      window.location.hash = h
+    }
+  }, [])
+
+  // Internal screen switch — no hash change (for transient states)
+  const switchScreen = useCallback((s) => { setScreen(s) }, [])
 
   const examType = examData?.exam_type || ''
   const variant = examData?.variant || ''
@@ -28,13 +71,19 @@ export function AppProvider({ children }) {
   const typeLabel = TYPE_LABEL[examType] || examType
   const variantLabel = variant && variant !== 'multiple_choice' ? VARIANT_LABEL[variant] || variant : ''
 
-  const goHome = useCallback(() => { setScreen('home'); setPendingFiles(null) }, [])
-  const goProcessing = useCallback((files) => { setPendingFiles(files); setScreen('processing') }, [])
-  const goReview = useCallback((data) => { setExamData(data); setPendingFiles(null); setScreen('review') }, [])
+  const goHome = useCallback(() => { navigate('home'); setPendingFiles(null) }, [navigate])
+  const goProcessing = useCallback((files) => { setPendingFiles(files); switchScreen('processing') }, [switchScreen])
+  const goReview = useCallback((data) => {
+    setExamData(data)
+    try { sessionStorage.setItem('exam_review', JSON.stringify(data)) } catch {}
+    setPendingFiles(null)
+    navigate('review')
+  }, [navigate])
+  const goHistory = useCallback(() => { navigate('history') }, [navigate])
 
   const loadReviewFromHistory = useCallback(async (id, apiBase) => {
-    setScreen('processing')
-    setPendingFiles(null)
+    switchScreen('processing')
+    setPendingFiles([])  // empty array = intentional (distinguishes from null = dead)
     try {
       const r = await fetch(apiBase + '/exams/' + id)
       const e = await r.json()
@@ -49,14 +98,14 @@ export function AppProvider({ children }) {
           warnings: [],
         })
       } else {
-        setScreen('home')
+        navigate('home')
       }
-    } catch { setScreen('home') }
-  }, [goReview])
+    } catch { navigate('home') }
+  }, [goReview, navigate, switchScreen])
 
   return (
     <AppContext.Provider value={{
-      screen, setScreen, goHome, goProcessing, goReview, loadReviewFromHistory,
+      screen, setScreen, goHome, goProcessing, goReview, goHistory, loadReviewFromHistory,
       pendingFiles,
       examData, setExamData, examType, variant, questions,
       history, setHistory, histPage, setHistPage, histDone, setHistDone,

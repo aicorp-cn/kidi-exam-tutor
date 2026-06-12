@@ -4,6 +4,45 @@ All 5 tools are defined here as Python dicts — pure data, no logic.
 Used by engine.py for both Strict Mode (beta endpoint) and fallback mode.
 """
 
+
+# ═══════════════════════════════════════════════════════════════
+# Symbol Conventions — 以中文语义情景为索引的符号映射表
+# ═══════════════════════════════════════════════════════════════
+
+_STAGE2_SYMBOL_CONVENTIONS = """\
+【JSON 字段值符号约定 — 以中文讲解者视角】
+
+你正在用中文为学生讲解英文试卷。在 JSON 字符串值中书写内容时，
+根据以下情景选择符号。同一种情景永远用同一种符号，不漂移：
+
+• 提及英文单词或短语时 → 用英文单引号 '...' 将其括起来。
+  例：「'breakfast' 是名词」「短语 'take after' 表示照顾」
+
+• 引用原文段落或长句作为答题依据时 → 用直角引号 「...」。
+  例：「原文第2段：「The author argues that education is fundamental」」
+
+• 中文语义强调或翻译对应时 → 用中文弯引号 \u201c\u201d。
+  例：「表示\u201c吃早餐\u201d而非\u201c做早餐\u201d」「此处应理解为\u201c照顾\u201d」
+
+• 列出选项标签时 → 无引号，直接 A. B. C. D.
+
+• 标注 DJ 音标时 → /.../ 斜线，如 /\u02c8brek.f\u0259st/
+
+• HTML 标记 → <u>...</u> 原样保留
+
+• 英文缩写和所有格中的撇号 → 这是单词的一部分，
+  如 don't、teacher's、he's，不是引号，JSON 安全，原样保留。
+
+绝对禁止：ASCII 英文双引号 "（U+0022）。
+它是 JSON 的字符串定界符。出现在字段值内必然导致解析失败。
+无论什么情景，无论引用什么内容，都不允许使用。"""
+
+_STAGE1_SYMBOL_RULE = (
+    "【转录约定】若原始试卷文本中含有英文双引号 \"，在 JSON 字段值中替换为"
+    "英文单引号 ' 或直角引号 「」。确保字段值内不出现 ASCII \"。"
+)
+
+
 # ═══════════════════════════════════════════════════════════════
 # Stage 1: Parse Exam
 # ═══════════════════════════════════════════════════════════════
@@ -16,7 +55,8 @@ PARSE_EXAM_DEF = {
         "description": (
             "Parse OCR text of an English exam into structured JSON. "
             "Identify the exam type, extract the full passage, and list all questions "
-            "with their context and options. For non-applicable fields, use empty strings."
+            "with their context and options. For non-applicable fields, use empty strings.\n\n"
+            + _STAGE1_SYMBOL_RULE
         ),
         "parameters": {
             "type": "object",
@@ -109,7 +149,9 @@ GENERATE_GRAMMAR_CLOZE_DEF = {
             "in the given context. Connect to what comes before and after the blank.\n\n"
             "6. 排除法 (Elimination): For each WRONG option (3 total), one line as "
             "'\u274c \u4e0d\u9009 X: specific_reason'. Reasons must point to grammar errors, "
-            "collocation errors, or logical contradictions — never vague."
+            "collocation errors, or logical contradictions — never vague.\n\n"
+            +
+            _STAGE2_SYMBOL_CONVENTIONS
         ),
         "parameters": {
             "type": "object",
@@ -198,7 +240,9 @@ GENERATE_CLOZE_DEF = {
             "in the given context. Connect to what comes before and after the blank.\n\n"
             "6. 排除法 (Elimination): For each WRONG option (3 total), one line as "
             "'\u274c \u4e0d\u9009 X: specific_reason'. Reasons must point to grammar errors, "
-            "collocation errors, or logical contradictions \u2014 never vague."
+            "collocation errors, or logical contradictions \u2014 never vague.\n\n"
+            +
+            _STAGE2_SYMBOL_CONVENTIONS
         ),
         "parameters": GENERATE_GRAMMAR_CLOZE_DEF["function"]["parameters"],
     },
@@ -228,7 +272,9 @@ GENERATE_OPEN_CLOZE_DEF = {
             "answer fits the context. Connect to what comes before and after the blank.\n\n"
             "5. 推断思路 (Deduction Path): 1-2 sentences explaining why other possible "
             "words are ruled out. Consider grammar, collocation, and semantic fit. "
-            "Format: '\u6392\u9664\\u2026\u2026\uff0c\u56e0\u4e3a\\u2026\u2026'"
+            "Format: '\u6392\u9664\\u2026\u2026\uff0c\u56e0\u4e3a\\u2026\u2026'\n\n"
+            +
+            _STAGE2_SYMBOL_CONVENTIONS
         ),
         "parameters": {
             "type": "object",
@@ -312,7 +358,9 @@ GENERATE_READING_COMP_DEF = {
             "4. 解析 (Analysis): Explain how the correct option maps to the passage — "
             "\u540c\u4e49\u66ff\u6362, \u76f4\u63a5\u5bf9\u5e94, or \u5408\u7406\u63a8\u65ad.\n\n"
             "5. 排除法 (Elimination): For each wrong option, "
-            "'\u274c \u4e0d\u9009 X: reason (\u65e0\u4e2d\u751f\u6709/\u5077\u6362\u6982\u5ff5/\u4e0e\u539f\u6587\u76f8\u53cd)'."
+            "'\u274c \u4e0d\u9009 X: reason (\u65e0\u4e2d\u751f\u6709/\u5077\u6362\u6982\u5ff5/\u4e0e\u539f\u6587\u76f8\u53cd)'.\n\n"
+            +
+            _STAGE2_SYMBOL_CONVENTIONS
         ),
         "parameters": {
             "type": "object",
@@ -372,7 +420,9 @@ GENERATE_TRUE_FALSE_DEF = {
             "\u5077\u6362\u4e3b\u8bed/\u5077\u6362\u6570\u5b57/\u5077\u6362\u65f6\u6001/\u65e0\u4e2d\u751f\u6709/\u8fc7\u5ea6\u63a8\u65ad.\n\n"
             "4. 解析 (Analysis): For True: explain how the statement matches the passage. "
             "For False: point out the specific contradiction. "
-            "For Not Given: explain why it's neither confirmed nor inferable."
+            "For Not Given: explain why it's neither confirmed nor inferable.\n\n"
+            +
+            _STAGE2_SYMBOL_CONVENTIONS
         ),
         "parameters": {
             "type": "object",

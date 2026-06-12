@@ -7,6 +7,7 @@ export default defineConfig({
   build: {
     outDir: '../webui',
     emptyOutDir: true,
+    modulePreload: false,
   },
   server: {
     proxy: {

@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Query, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -25,6 +25,20 @@ from config import config  # validates at first access
 from engine import process_exam
 from store import ExamStore
 from pipeline_log import log_upload, init_log_path
+
+
+class CORSStaticFiles(StaticFiles):
+    """StaticFiles that adds CORS headers for module script compatibility."""
+
+    async def __call__(self, scope, receive, send):
+        async def cors_send(message):
+            if message["type"] == "http.response.start":
+                headers = dict(message.get("headers", []))
+                if b"access-control-allow-origin" not in headers:
+                    headers[b"access-control-allow-origin"] = b"*"
+                message["headers"] = list(headers.items())
+            await send(message)
+        await super().__call__(scope, receive, cors_send)
 
 # ── Init paths ──
 
@@ -145,11 +159,11 @@ async def create_exam(images: list[UploadFile] = File(...)):
 
 
 @app.get("/exams")
-async def list_exams(page: int = 1):
-    """List recent exam records."""
+async def list_exams(page: int = 1, search: str = "", type: str = ""):
+    """List recent exam records. Supports search (passage/ocr/tutorial) and type filter."""
     limit = config.history_page_size
-    items, total = store.list_exams(page, limit)
-    return {"items": items, "total": total, "page": page}
+    items, total, type_counts = store.list_exams(page, limit, search=search, exam_type=type)
+    return {"items": items, "total": total, "page": page, "types": type_counts}
 
 
 @app.get("/exams/{exam_id}")
@@ -227,7 +241,7 @@ async def debug_client_error(request: Request):
 # ═══════════════════════════════════════════════════════════════
 
 if config.webui_dir.exists():
-    app.mount("/", StaticFiles(directory=str(config.webui_dir), html=True), name="webui")
+    app.mount("/", CORSStaticFiles(directory=str(config.webui_dir), html=True), name="webui")
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -88,30 +88,38 @@ def _maybe_fallback(session_id: str = "", status_code: int = 0):
 
 # ── JSON parsing with LLM output resilience ──
 
+_CHINESE_QUOTE_RE = __import__('re').compile(
+    r'[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]'
+    r'"'
+    r'[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]'
+)
+
+
 def _parse_json(raw: str) -> tuple[dict | None, bool]:
-    """Parse JSON from LLM tool call arguments. Returns (data, _) tuple.
-    
-    Tries json.loads first, then raw_decode for extra-data tolerance.
-    Returns (None, False) if unparseable — caller retries LLM.
+    """Parse JSON from LLM tool call arguments. Returns (data, bool).
+
+    Chinese-quote fast-fail: if raw contains ASCII " between CJK characters,
+    return None immediately — this JSON is structurally broken by the LLM
+    using ASCII quotes inside Chinese text values.
     """
     if not raw or not raw.strip():
         return None, False
 
-    # Try strict parse first
+    if _CHINESE_QUOTE_RE.search(raw):
+        return None, False
+
     try:
         return json.loads(raw), False
     except json.JSONDecodeError:
         pass
 
-    # Extra data after valid JSON
     try:
         decoder = json.JSONDecoder()
-        obj, _ = decoder.raw_decode(raw)
-        return obj, False
+        return decoder.raw_decode(raw)[0], False
     except json.JSONDecodeError:
         pass
 
-    return None, False  # Unrecoverable — caller retries LLM
+    return None, False
 
 
 def _validate_structure(data: dict, schema: dict) -> list[str]:
@@ -179,14 +187,27 @@ async def _stage1_call(ocr_text: str, page_count: int,
     params = _get_stage_params("stage1")
     tools = STAGE1_TOOLS if _USE_STRICT else strip_strict(STAGE1_TOOLS)
 
+    chinese_quote_context = None
+
     for attempt in range(params["retry_attempts"]):
         try:
+            messages = [
+                {"role": "system", "content": STAGE1_SYSTEM_PROMPT},
+                {"role": "user", "content": build_stage1_user_prompt(ocr_text, page_count)},
+            ]
+            if chinese_quote_context:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "上一次生成失败：JSON 字段值中检测到 ASCII 英文双引号 \"。\n\n"
+                        f"违规位置（周围文本）：{chinese_quote_context}\n\n"
+                        "请回顾工具描述中的【JSON 字段值符号约定】，"
+                        "根据你的具体情景选择正确的符号，重新生成。"
+                    ),
+                })
             response = await client.chat.completions.create(
                 model=params["model"],
-                messages=[
-                    {"role": "system", "content": STAGE1_SYSTEM_PROMPT},
-                    {"role": "user", "content": build_stage1_user_prompt(ocr_text, page_count)},
-                ],
+                messages=messages,
                 tools=tools,
                 tool_choice={"type": "function", "function": {"name": "parse_exam"}},
                 temperature=params.get("temperature", 0.0),
@@ -200,11 +221,19 @@ async def _stage1_call(ocr_text: str, page_count: int,
                 raise RuntimeError("Stage 1: LLM did not call parse_exam after retry")
 
             data, _ = _parse_json(
-                response.choices[0].message.tool_calls[0].function.arguments
+                raw_args := response.choices[0].message.tool_calls[0].function.arguments
             )
             if data is None:
                 if attempt == 0:
-                    log_stage_retry(session_id, "stage1", attempt+1, "json_parse_fail")
+                    m = _CHINESE_QUOTE_RE.search(raw_args)
+                    if m:
+                        pos = m.start()
+                        chinese_quote_context = raw_args[max(0, pos - 30):pos + 40]
+                        log_stage_retry(session_id, "stage1", attempt+1,
+                                        "json_parse_fail:chinese_quote")
+                    else:
+                        log_stage_retry(session_id, "stage1", attempt+1,
+                                        "json_parse_fail")
                     continue
                 raise RuntimeError("Stage 1: LLM returned unparseable JSON after retry")
 
@@ -256,17 +285,30 @@ async def _stage2_call(s1_data: dict, exam_type: str = "",
     all_tools = list(STAGE2_TOOL_DEFS.values())
     tools = all_tools if _USE_STRICT else [strip_strict(t) for t in all_tools]
 
+    chinese_quote_context = None
+
     for attempt in range(params["retry_attempts"]):
         try:
+            messages = [
+                {"role": "system", "content": STAGE2_SYSTEM_PROMPT},
+                {"role": "user", "content": build_stage2_user_prompt(
+                    s1_data, exam_type, format_questions_block,
+                    variant=variant
+                )},
+            ]
+            if chinese_quote_context:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "上一次生成失败：JSON 字段值中检测到 ASCII 英文双引号 \"。\n\n"
+                        f"违规位置（周围文本）：{chinese_quote_context}\n\n"
+                        "请回顾工具描述中的【JSON 字段值符号约定】，"
+                        "根据你的具体情景选择正确的符号，重新生成。"
+                    ),
+                })
             response = await client.chat.completions.create(
                 model=params["model"],
-                messages=[
-                    {"role": "system", "content": STAGE2_SYSTEM_PROMPT},
-                    {"role": "user", "content": build_stage2_user_prompt(
-                        s1_data, exam_type, format_questions_block,
-                        variant=variant
-                    )},
-                ],
+                messages=messages,
                 tools=tools,
                 tool_choice="required",
                 temperature=params.get("temperature", 0.3),
@@ -308,17 +350,23 @@ async def _stage2_call(s1_data: dict, exam_type: str = "",
             )
             if data is None:
                 if attempt == 0:
-                    # Log JSON error position for diagnosis
-                    try:
-                        json.loads(raw_args)
-                    except json.JSONDecodeError as je:
-                        ctx = raw_args[max(0,je.pos-30):je.pos+30]
+                    m = _CHINESE_QUOTE_RE.search(raw_args)
+                    if m:
+                        pos = m.start()
+                        chinese_quote_context = raw_args[max(0, pos - 30):pos + 40]
                         log_stage_retry(session_id, "stage2", attempt+1,
-                                        f"json_parse_fail pos={je.pos} "
-                                        f"ctx={ctx!r} msg={str(je)[:80]}")
+                                        "json_parse_fail:chinese_quote")
                     else:
-                        log_stage_retry(session_id, "stage2", attempt+1,
-                                        "json_parse_fail")
+                        try:
+                            json.loads(raw_args)
+                        except json.JSONDecodeError as je:
+                            ctx = raw_args[max(0,je.pos-30):je.pos+30]
+                            log_stage_retry(session_id, "stage2", attempt+1,
+                                            f"json_parse_fail pos={je.pos} "
+                                            f"ctx={ctx!r} msg={str(je)[:80]}")
+                        else:
+                            log_stage_retry(session_id, "stage2", attempt+1,
+                                            "json_parse_fail")
                     continue
                 raise RuntimeError(
                     f"Stage 2: LLM returned unparseable JSON after retry "

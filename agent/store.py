@@ -30,28 +30,21 @@ class ExamStore:
                     created_at TEXT NOT NULL DEFAULT (datetime('now'))
                 )
             """)
-            # Migrations for existing DBs
             for col in ("variant", "passage", "s1_questions", "question_count"):
                 try:
                     conn.execute(f"ALTER TABLE exams ADD COLUMN {col} "
                                  f"{'TEXT NOT NULL DEFAULT ' + chr(39) + chr(39) if col != 'question_count' else 'INTEGER NOT NULL DEFAULT 0'}")
                 except sqlite3.OperationalError:
                     pass
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_exams_session
-                ON exams(session_id)
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_exams_created
-                ON exams(created_at DESC)
-            """)
+            conn.execute("""CREATE INDEX IF NOT EXISTS idx_exams_session ON exams(session_id)""")
+            conn.execute("""CREATE INDEX IF NOT EXISTS idx_exams_created ON exams(created_at DESC)""")
+            conn.execute("""CREATE INDEX IF NOT EXISTS idx_exams_type ON exams(exam_type)""")
 
     def save(self, *, session_id: str, exam_type: str,
              ocr_text: str, tutorial: str,
              variant: str = "", passage: str = "",
              s1_questions: str = "", question_count: int = 0,
              warnings: list = None) -> str:
-        """Save exam result. Returns the generated exam_id."""
         exam_id = str(uuid.uuid4())[:8]
         warnings_json = json.dumps(warnings or [], ensure_ascii=False)
 
@@ -68,7 +61,6 @@ class ExamStore:
         return exam_id
 
     def get_exam(self, exam_id: str) -> dict | None:
-        """Get a single exam record by ID."""
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
@@ -78,16 +70,45 @@ class ExamStore:
             return None
         return dict(row)
 
-    def list_exams(self, page: int = 1, limit: int = 20) -> tuple[list[dict], int]:
-        """List recent exams with pagination. Returns (items, total)."""
+    def list_exams(self, page: int = 1, limit: int = 20,
+                   search: str = "", exam_type: str = "") -> tuple[list[dict], int, dict]:
+        """List recent exams with optional search and type filter.
+        Returns (items, total, type_counts).
+        """
         offset = (page - 1) * limit
+        conditions = []
+        params = []
+
+        if exam_type:
+            conditions.append("exam_type = ?")
+            params.append(exam_type)
+
+        if search:
+            like = f"%{search}%"
+            conditions.append("(passage LIKE ? OR ocr_text LIKE ? OR tutorial LIKE ?)")
+            params.extend([like, like, like])
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        count_sql = f"SELECT COUNT(*) FROM exams {where}"
+
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            total = conn.execute("SELECT COUNT(*) FROM exams").fetchone()[0]
+            total = conn.execute(count_sql, params).fetchone()[0]
+
             rows = conn.execute(
-                "SELECT id, session_id, exam_type, variant, passage, "
-                "s1_questions, question_count, created_at FROM exams "
-                "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset),
+                f"SELECT id, session_id, exam_type, variant, passage, "
+                f"s1_questions, question_count, created_at FROM exams "
+                f"{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params + [limit, offset],
             ).fetchall()
-        return [dict(r) for r in rows], total
+
+            # Type counts for filters
+            type_counts = {}
+            tc_rows = conn.execute(
+                "SELECT exam_type, COUNT(*) as cnt FROM exams GROUP BY exam_type"
+            ).fetchall()
+            for r in tc_rows:
+                if r["exam_type"]:
+                    type_counts[r["exam_type"]] = r["cnt"]
+
+        return [dict(r) for r in rows], total, type_counts

@@ -1,5 +1,39 @@
 # Changelog
 
+## v5.4 — 2026-06-12
+
+### 前端重写
+
+- **React + Vite + Tailwind CSS** 替代原生 HTML/CSS/JS SPA
+  - `frontend/src/` 源码：`App.jsx` / `store.jsx` / 4 Screens / 2 Hooks / 1 Component
+  - `frontend/webui/` 构建产物，Vite build → FastAPI CORSStaticFiles
+- **Hash 路由** (`#home` / `#history` / `#review`)：`processing` 为瞬态屏，不写入浏览器历史
+- **sessionStorage 持久化**：`goReview` 保存 examData，刷新恢复，不丢数据
+
+### 前端功能
+
+- **HistoryScreen**：独立历史页，后端 `/exams` 支持 `search` + `type` 参数搜索筛选
+- **词汇逐词播放**：「生词洞察」和「选项词义」逐行解析 `／` 分隔符，显示音标，独立 🔊 按钮
+- **模块语义着色**：定位(天蓝) / 词汇(青) / 考点(琥珀) / 推理(紫) / 证据(灰)
+- **题目页优化**：▶ 按钮入题号标题栏替代 FAB，`第 3 题 ▶  选 [A]`；答案标签与题型组合
+- **底部导航重设计**：箭头 40×40px + text-lg；圆点缩小为指示器(5px/12px)；📋 badge 显示完成计数
+- **防穿透**：sticky 标题栏加底边阴影阻断内容穿透；overflow-x-hidden 消除横向滚动条
+- **警告内联**：warnings 改为可关闭内联 banner，不遮挡 TopBar
+- **切换题目静音**：`go()` 调用 `tts.stop()`
+
+### 后端增强
+
+- **`store.list_exams`** 加 `search` + `exam_type` 参数，SQL WHERE + LIKE 过滤
+- **`/exams` API** 返回 `types` 字段（题型分布统计）
+- **`exam_type` 索引**：新增 `idx_exams_type`
+
+### Bug 修复
+
+- `useEffect` import 缺失导致 ReviewScreen 崩溃白屏 — 修复
+- `fileRef` input 缺 `accept="image/*"` 导致「相册」按钮打开文件浏览器 — 修复
+- `AppProvider` 未包裹 `App` 导致 0 元素渲染 — 修复
+- 构建产物 `type="module"` + `crossorigin` 加载失败 — CORSStaticFiles + modulePreload 修复
+
 ## v5.3 — 2026-06-07
 
 ### 健壮性

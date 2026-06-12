@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useApp } from '../store'
 import { useSSE } from '../hooks/useSSE'
 
@@ -7,6 +7,7 @@ const STEPS = ['上传', '识别', '解析', '精讲']
 export function ProcessingScreen({ files: initialFiles }) {
   const { goHome, goReview, config } = useApp()
   const sse = useSSE()
+  const timeoutRef = useRef(null)
 
   // Start when files arrive
   useEffect(() => {
@@ -15,9 +16,18 @@ export function ProcessingScreen({ files: initialFiles }) {
     }
   }, [])
 
-  // Navigate to review when done
+  // Safety: if no files and no SSE activity after 800ms, dead-end redirect
+  useEffect(() => {
+    if (initialFiles === null || initialFiles === undefined) {
+      timeoutRef.current = setTimeout(() => goHome(), 800)
+    }
+    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }
+  }, [])
+
+  // Navigate to review when done — cancel timeout
   useEffect(() => {
     if (sse.result && sse.stage === 'done') {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
       setTimeout(() => {
         goReview({
           questions: sse.result.questions || [],
