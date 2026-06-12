@@ -249,5 +249,14 @@ if config.webui_dir.exists():
 # ═══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    print(f"Exam Tutor Agent starting on http://{config.server_host}:{config.server_port}")
-    uvicorn.run(app, host=config.server_host, port=config.server_port, log_level="info")
+    proto = "https" if getattr(config, 'ssl_enabled', False) else "http"
+    print(f"Exam Tutor Agent starting on {proto}://{config.server_host}:{config.server_port}")
+
+    uvicorn_kwargs = dict(
+        host=config.server_host, port=config.server_port, log_level="info"
+    )
+    if getattr(config, 'ssl_enabled', False):
+        uvicorn_kwargs["ssl_keyfile"] = str(config.ssl_key_file)
+        uvicorn_kwargs["ssl_certfile"] = str(config.ssl_cert_file)
+
+    uvicorn.run(app, **uvicorn_kwargs)

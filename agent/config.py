@@ -249,6 +249,17 @@ class Config:
         self.cors_origins = srv["cors_origins"]
         self.api_prefix = srv.get("api_prefix", "")
 
+        # SSL (optional, disabled by default)
+        ssl_raw = srv.get("ssl", {})
+        self.ssl_enabled = ssl_raw.get("enabled", False)
+        if self.ssl_enabled:
+            self.ssl_cert_file = _resolve_path(ssl_raw["cert_file"])
+            self.ssl_key_file = _resolve_path(ssl_raw["key_file"])
+            _check(self.ssl_cert_file.exists(),
+                   f"SSL cert file not found: {self.ssl_cert_file}")
+            _check(self.ssl_key_file.exists(),
+                   f"SSL key file not found: {self.ssl_key_file}")
+
         # Upload
         up = raw["upload"]
         self.upload_max_file_size = up["max_file_size_mb"] * 1024 * 1024
