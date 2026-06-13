@@ -273,7 +273,8 @@ async def _stage1_call(ocr_text: str, page_count: int,
 
 async def _stage2_call(s1_data: dict, exam_type: str = "",
                       variant: str = "multiple_choice",
-                      session_id: str = "") -> dict:
+                      session_id: str = "",
+                      cancel_evt: asyncio.Event = None) -> dict:
     """Call DeepSeek to generate tutorials. Model picks the right tool.
 
     All 5 Stage 2 tools are offered. Model chooses based on the data.
@@ -329,21 +330,42 @@ async def _stage2_call(s1_data: dict, exam_type: str = "",
                           f"stage2_tool chosen={chosen_tool} hinted={exam_type}")
 
             # Detect output truncation — split into smaller batches and retry
-            if response.choices[0].finish_reason == "length" and attempt == 0:
-                log_stage_retry(session_id, "stage2", 1, "output_truncated")
+            if response.choices[0].finish_reason == "length":
+                log_stage_retry(session_id, "stage2", attempt + 1, "output_truncated")
                 batch_size = params.get("truncation_batch_size", 2)
                 questions = s1_data["questions"]
                 if len(questions) <= batch_size:
-                    continue
+                    if attempt == 0:
+                        continue
+                    raise RuntimeError(
+                        f"Stage 2 output truncated even at batch_size={batch_size}. "
+                        "Consider increasing max_tokens or reducing question count."
+                    )
                 all_results = []
+                failed = []
                 for batch_start in range(0, len(questions), batch_size):
                     batch_end = min(batch_start + batch_size, len(questions))
                     batch_data = {"passage": s1_data["passage"],
                                   "questions": questions[batch_start:batch_end]}
-                    batch_result = await _stage2_call(
-                        batch_data, exam_type=exam_type,
-                        variant=variant, session_id=session_id)
-                    all_results.extend(batch_result["questions"])
+                    # Check cancellation before each sub-batch
+                    if cancel_evt and cancel_evt.is_set():
+                        raise asyncio.CancelledError("Stage 2 batch cancelled")
+                    try:
+                        batch_result = await _stage2_call(
+                            batch_data, exam_type=exam_type,
+                            variant=variant, session_id=session_id,
+                            cancel_evt=cancel_evt)
+                        all_results.extend(batch_result["questions"])
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        failed.append(f"Q{batch_start+1}-Q{batch_end}: {e}")
+                if failed:
+                    raise RuntimeError(
+                        f"Stage 2 batch partial failure: {len(failed)}/{len(all_results) + len(failed)} "
+                        f"batches failed ({'; '.join(failed[:3])}). "
+                        f"Partial results ({len(all_results)} questions) preserved in log."
+                    )
                 return {"questions": all_results}
 
             data, _ = _parse_json(
@@ -588,7 +610,8 @@ async def process_exam(session_id: str, image_paths: list[str],
             s2_data = await _stage2_call(s1_data,
                                           exam_type=exam_type,
                                           variant=variant,
-                                          session_id=session_id)
+                                          session_id=session_id,
+                                          cancel_evt=cancel_evt)
         finally:
             heartbeat_task.cancel()
             try:
@@ -658,6 +681,12 @@ async def process_exam(session_id: str, image_paths: list[str],
             "message": "AI 服务暂时不可用，请稍后重试",
             "recoverable": True,
         })
+    except asyncio.TimeoutError as e:
+        log_trace(session_id, f"timeout_error: {e}")
+        await _broadcast(ui_queues, session_id, "error", "ocr_failed", {
+            "message": str(e),
+            "recoverable": True,
+        })
     except APIError as e:
         detail = _api_error_detail(e)
         log_trace(session_id, f"api_error:{e.status_code}:{detail}")
@@ -685,8 +714,8 @@ async def process_exam(session_id: str, image_paths: list[str],
             user_msg = "系统配置异常，请联系管理员。"
             recoverable = False
         else:
-            user_msg = "系统错误，请稍后重试。"
-            recoverable = False
+            user_msg = "处理异常，请稍后重试。"
+            recoverable = True
         log_trace(session_id, f"runtime_error: {msg}")
         await _broadcast(ui_queues, session_id, "error", "unknown", {
             "message": user_msg,

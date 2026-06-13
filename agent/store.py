@@ -92,15 +92,18 @@ class ExamStore:
     def toggle_star(self, exam_id: str) -> bool:
         """Toggle starred status. Returns new state (True=starred)."""
         with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT starred FROM exams WHERE id = ?", (exam_id,)
             ).fetchone()
             if not row:
+                conn.commit()
                 return False
             new_val = 1 if row[0] == 0 else 0
             conn.execute(
                 "UPDATE exams SET starred = ? WHERE id = ?", (new_val, exam_id)
             )
+            conn.commit()
         return new_val == 1
 
     def get_review(self, exam_id: str) -> dict | None:

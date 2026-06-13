@@ -28,7 +28,10 @@ export function HistoryScreen() {
     } catch {}
   }
 
+  const fetchRef = useRef(0)  // race prevention: only apply latest fetch
+
   const fetchPage = useCallback(async (pg, reset, s, t) => {
+    const fid = ++fetchRef.current
     setLoading(true)
     try {
       let url = config.apiBase + '/exams?page=' + pg
@@ -36,6 +39,7 @@ export function HistoryScreen() {
       if (t) url += '&type=' + encodeURIComponent(t)
       const r = await fetch(url)
       const data = await r.json()
+      if (fid !== fetchRef.current) return  // stale, discard
       if (!data.items || data.items.length === 0) {
         setDone(true)
         if (reset) setItems([])
