@@ -101,7 +101,7 @@ function VocabularySection({ vocabulary, speakWord }) {
                       <span className="text-white font-medium">{w.word}</span>
                       {w.pos && <span className="opacity-40 text-[0.6rem]">{w.pos}</span>}
                       {w.chinese && <span className="opacity-60">{w.chinese}</span>}
-                      {w.count > 0 && <span className="opacity-30 text-[0.6rem]">×{w.count + 1}</span>}
+                      {w.count > 0 && <span className="opacity-30 text-[0.6rem]">×{w.count}</span>}
                     </div>
                   ))}
                 </div>

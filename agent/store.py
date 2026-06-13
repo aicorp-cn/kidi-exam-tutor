@@ -149,15 +149,15 @@ class ExamStore:
 
             w = row["word"]
             count = row["appearance_count"]
-            old_count = count - 1  # classify uses count BEFORE current recording
+            # Stored count already includes this exam — use directly
 
             if w in curriculum:
                 cur = curriculum[w]
-                entry = {"word": w, "pos": cur[0], "chinese": cur[1], "count": old_count}
-                tier_key = "high" if old_count >= 3 else "medium"
+                entry = {"word": w, "pos": cur[0], "chinese": cur[1], "count": count}
+                tier_key = "high" if count >= 3 else "medium"
             else:
-                entry = {"word": w, "pos": row["pos"], "chinese": row["chinese"], "count": old_count}
-                tier_key = "medium" if old_count >= 2 else "low"
+                entry = {"word": w, "pos": row["pos"], "chinese": row["chinese"], "count": count}
+                tier_key = "medium" if count >= 2 else "low"
 
             tiers[tier_key].append(entry)
 

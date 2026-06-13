@@ -626,10 +626,12 @@ async def process_exam(session_id: str, image_paths: list[str],
             warnings=warnings,
         )
 
-        # Extract and classify vocabulary
+        # Extract and classify vocabulary — from passage + stems + options
         vocab_text = s1_data.get("passage", "") + " "
         for q in s1_data.get("questions", []):
             vocab_text += (q.get("stem", "") or q.get("sentence_with_blank", "") or q.get("statement", "")) + " "
+            for opt_text in q.get("options", {}).values():
+                vocab_text += opt_text + " "
         vocab_insight = process_vocabulary(vocab_text, exam_id, store)
 
         await _broadcast(ui_queues, session_id, "stage2", "done", {
