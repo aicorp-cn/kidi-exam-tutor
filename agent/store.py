@@ -211,6 +211,27 @@ class ExamStore:
                     (json.dumps(ids), new_count, word),
                 )
 
+        # GC pass: remove references to any non-existent exam IDs
+        # (catches concurrent process_vocabulary inserts during deletion)
+        valid_ids = {r[0] for r in conn.execute("SELECT id FROM exams").fetchall()}
+        rows = conn.execute(
+            "SELECT word, exam_ids, appearance_count FROM vocabulary"
+        ).fetchall()
+        for word, exam_ids_str, count in rows:
+            ids = json.loads(exam_ids_str)
+            clean_ids = [eid for eid in ids if eid in valid_ids]
+            if len(clean_ids) == len(ids):
+                continue
+            new_count = count - (len(ids) - len(clean_ids))
+            if new_count <= 0:
+                conn.execute("DELETE FROM vocabulary WHERE word = ?", (word,))
+            else:
+                conn.execute(
+                    "UPDATE vocabulary SET exam_ids = ?, appearance_count = ?, "
+                    "last_seen = datetime('now') WHERE word = ?",
+                    (json.dumps(clean_ids), new_count, word),
+                )
+
     def list_exams(self, page: int = 1, limit: int = 20,
                    search: str = "", exam_type: str = "") -> tuple[list[dict], int, dict]:
         """List recent exams with optional search and type filter.

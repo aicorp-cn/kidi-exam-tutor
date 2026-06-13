@@ -142,7 +142,15 @@ export function ReviewScreen() {
   const warnings = examData?.warnings || []
 
   const q = questions[current]
-  if (!q) return null
+  if (!q) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-exam-text-muted gap-3 px-6">
+        <span className="text-3xl opacity-40">📋</span>
+        <p className="text-sm">无法加载试卷内容</p>
+        <button onClick={goHome} className="text-xs text-exam-accent border border-exam-accent/30 px-4 py-1.5 rounded-full">返回首页</button>
+      </div>
+    )
+  }
 
   const getModuleOrder = (modules) => {
     if (variant === 'open_ended') {
