@@ -270,8 +270,9 @@ class ExamStore:
         return {r["word"]: dict(r) for r in rows}
 
     def vocab_record(self, word: str, pos: str, chinese: str, exam_id: str):
-        """Record a word's appearance in an exam. Upserts."""
+        """Record a word's appearance in an exam. Atomic upsert via transaction."""
         with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT exam_ids, appearance_count FROM vocabulary WHERE word = ?",
                 (word,),
@@ -291,3 +292,4 @@ class ExamStore:
                     "VALUES (?, ?, ?, ?, 1)",
                     (word, pos, chinese, json.dumps([exam_id])),
                 )
+            conn.commit()

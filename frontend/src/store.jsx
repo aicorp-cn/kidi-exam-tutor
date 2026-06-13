@@ -24,8 +24,7 @@ export function AppProvider({ children }) {
   const [pendingFiles, setPendingFiles] = useState(null)
   const [examData, setExamData] = useState(null)
   const [history, setHistory] = useState([])
-  const [histPage, setHistPage] = useState(1)
-  const [histDone, setHistDone] = useState(false)
+  const [historyVersion, setHistoryVersion] = useState(0)
   const [config, setConfig] = useState({ apiBase:'', pageSize:20, allowedTypes:[] })
 
   useEffect(() => {
@@ -73,12 +72,14 @@ export function AppProvider({ children }) {
 
   const goHome = useCallback(() => { navigate('home'); setPendingFiles(null) }, [navigate])
   const goProcessing = useCallback((files) => { setPendingFiles(files); switchScreen('processing') }, [switchScreen])
+  const refreshHistory = useCallback(() => setHistoryVersion(v => v + 1), [])
   const goReview = useCallback((data) => {
     setExamData(data)
     try { sessionStorage.setItem('exam_review', JSON.stringify(data)) } catch {}
     setPendingFiles(null)
+    refreshHistory()
     navigate('review')
-  }, [navigate])
+  }, [navigate, refreshHistory])
   const goHistory = useCallback(() => { navigate('history') }, [navigate])
 
   const loadReviewFromHistory = useCallback(async (id, apiBase) => {
@@ -100,7 +101,7 @@ export function AppProvider({ children }) {
       screen, setScreen, goHome, goProcessing, goReview, goHistory, loadReviewFromHistory,
       pendingFiles,
       examData, setExamData, examType, variant, questions,
-      history, setHistory, histPage, setHistPage, histDone, setHistDone,
+      history, setHistory, historyVersion, refreshHistory,
       config, setConfig,
       ttsAutoSeq, typeLabel, variantLabel,
       TYPE_LABEL, VARIANT_LABEL,

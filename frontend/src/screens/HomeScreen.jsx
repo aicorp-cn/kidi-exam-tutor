@@ -6,7 +6,7 @@ const JPEG_QUALITY = 0.8
 const MAX_RAW_SIZE = 50 * 1024 * 1024
 
 export function HomeScreen() {
-  const { goProcessing, config, history, setHistory, loadReviewFromHistory, TYPE_LABEL, VARIANT_LABEL } = useApp()
+  const { goProcessing, config, history, setHistory, loadReviewFromHistory, TYPE_LABEL, VARIANT_LABEL, historyVersion } = useApp()
   const [dragOver, setDragOver] = useState(false)
   const [histLoading, setHistLoading] = useState(false)
   const camRef = useRef(null)
@@ -41,7 +41,7 @@ export function HomeScreen() {
     if (processed.length) goProcessing(processed)
   }, [goProcessing])
 
-  // Load initial history only
+  // Load history — re-fetches on historyVersion bump (new exam processed)
   useEffect(() => {
     setHistLoading(true)
     fetch(config.apiBase + '/exams?page=1')
@@ -49,7 +49,7 @@ export function HomeScreen() {
       .then(({ items }) => { if (items?.length) setHistory(items) })
       .catch(() => {})
       .finally(() => setHistLoading(false))
-  }, [])
+  }, [historyVersion])
 
   const toggleStar = async (examId, e) => {
     e.stopPropagation()
