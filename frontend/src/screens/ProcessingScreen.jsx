@@ -44,6 +44,7 @@ export function ProcessingScreen({ files: initialFiles }) {
           passage: sse.result.passage || '',
           s1_questions: sse.result.s1_questions || [],
           warnings: sse.result.warnings || [],
+          vocabulary: sse.result.vocabulary || {high:[], medium:[], low:[]},
         })
       }, 400)
     }

@@ -58,6 +58,62 @@ function parseOptionVocab(text) {
   }).filter(Boolean)
 }
 
+// ── Vocabulary section (per-exam) ──
+const TIER_CONFIG = {
+  high:   { label: '高频词', icon: '⭐', desc: '课标词 · 已出现 3 次以上', color: 'text-yellow-400 border-yellow-400/30', bg: 'bg-yellow-400/5' },
+  medium: { label: '中频词', icon: '📘', desc: '课标词 · 出现不足 3 次', color: 'text-blue-400 border-blue-400/30', bg: 'bg-blue-400/5' },
+  low:    { label: '低频词', icon: '📖', desc: '非课标词 · 首次出现', color: 'text-slate-400 border-slate-400/30', bg: 'bg-slate-400/5' },
+}
+
+function VocabularySection({ vocabulary, speakWord }) {
+  const [open, setOpen] = useState(false)
+  if (!vocabulary) return null
+  const tiers = ['high', 'medium', 'low']
+  const total = tiers.reduce((s, t) => s + (vocabulary[t]?.length || 0), 0)
+  if (total === 0) return null
+  const hasContent = tiers.some(t => (vocabulary[t]?.length || 0) > 0)
+
+  return (
+    <div className="mx-4 mt-2.5 bg-exam-surface rounded-lg border border-exam-border-light overflow-hidden shrink-0">
+      <div className="flex items-center justify-between px-3.5 py-3 cursor-pointer select-none" onClick={() => setOpen(!open)}>
+        <span className="text-sm text-exam-text-secondary font-medium">📖 本卷生词 ({total})</span>
+        <span className={`text-xs text-exam-text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>▼</span>
+      </div>
+      <div className={`overflow-hidden transition-all duration-300 ${open ? 'max-h-[60vh]' : 'max-h-0'}`}>
+        <div className="px-3.5 pb-3 overflow-y-auto max-h-[60vh] space-y-3">
+          {tiers.map(tier => {
+            const words = vocabulary[tier] || []
+            if (!words.length) return null
+            const cfg = TIER_CONFIG[tier]
+            return (
+              <div key={tier}>
+                <div className={`flex items-center gap-1.5 mb-1.5 ${cfg.color.split(' ')[0]}`}>
+                  <span>{cfg.icon}</span>
+                  <span className="text-xs font-semibold">{cfg.label}</span>
+                  <span className="text-[0.6rem] opacity-60">{cfg.desc}</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {words.map((w, i) => (
+                    <div key={i}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs border cursor-pointer transition-colors hover:opacity-80 ${cfg.color} ${cfg.bg}`}
+                      onClick={() => speakWord(w.word)}
+                    >
+                      <span className="text-white font-medium">{w.word}</span>
+                      {w.pos && <span className="opacity-40 text-[0.6rem]">{w.pos}</span>}
+                      {w.chinese && <span className="opacity-60">{w.chinese}</span>}
+                      {w.count > 0 && <span className="opacity-30 text-[0.6rem]">×{w.count + 1}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ReviewScreen() {
   const { goHome, examData, ttsAutoSeq, questions, variant, passageText = examData?.passage || '' } = useApp()
   const [current, setCurrent] = useState(0)
@@ -209,6 +265,9 @@ export function ReviewScreen() {
           </div>
         </div>
       )}
+
+      {/* Vocabulary insight */}
+      <VocabularySection vocabulary={examData?.vocabulary} speakWord={speakWord} />
 
       {/* Cards */}
       <div className="flex-1 overflow-hidden relative">
