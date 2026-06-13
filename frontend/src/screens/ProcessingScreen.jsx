@@ -24,6 +24,13 @@ export function ProcessingScreen({ files: initialFiles }) {
     return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }
   }, [])
 
+  // Navigate home when user cancels
+  useEffect(() => {
+    if (sse.stage === 'idle' && initialFiles?.length) {
+      goHome()
+    }
+  }, [sse.stage, goHome, initialFiles])
+
   // Navigate to review when done — cancel timeout
   useEffect(() => {
     if (sse.result && sse.stage === 'done') {
