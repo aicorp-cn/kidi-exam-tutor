@@ -51,6 +51,17 @@ export function HomeScreen() {
       .finally(() => setHistLoading(false))
   }, [])
 
+  const toggleStar = async (examId, e) => {
+    e.stopPropagation()
+    try {
+      const r = await fetch(config.apiBase + '/exams/' + examId + '/star', { method: 'POST' })
+      const d = await r.json()
+      setHistory(prev => prev.map(item =>
+        item.id === examId ? { ...item, starred: d.starred ? 1 : 0 } : item
+      ))
+    } catch {}
+  }
+
   const relDate = (iso) => {
     const d = new Date(iso + 'Z'), now = new Date(), diff = now - d, DAY = 86400000
     if (diff < DAY) return '今天'
@@ -120,13 +131,25 @@ export function HomeScreen() {
         {history.map(item => (
           <div key={item.id} className="bg-exam-surface rounded-lg p-3.5 mb-2 cursor-pointer border border-transparent active:border-exam-accent active:bg-exam-surface-hover transition-all"
             onClick={() => loadReviewFromHistory(item.id, config.apiBase)}>
-            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-              <span className="text-[0.7rem] text-exam-text-muted tabular-nums min-w-[30px]">{relDate(item.created_at)}</span>
-              <span className="text-[0.68rem] px-2 py-0.5 rounded-full font-medium text-exam-accent bg-indigo-400/8">{TYPE_LABEL[item.exam_type] || item.exam_type}</span>
-              {item.variant && item.variant !== 'multiple_choice' && <span className="text-[0.68rem] px-2 py-0.5 rounded-full font-medium text-exam-warn bg-yellow-400/8">{VARIANT_LABEL[item.variant]}</span>}
-              {item.question_count > 0 && <span className="text-[0.68rem] px-2 py-0.5 rounded-full font-medium text-exam-text-secondary bg-white/5">{item.question_count}题</span>}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className="text-[0.7rem] text-exam-text-muted tabular-nums min-w-[30px]">{relDate(item.created_at)}</span>
+                  <span className="text-[0.68rem] px-2 py-0.5 rounded-full font-medium text-exam-accent bg-indigo-400/8">{TYPE_LABEL[item.exam_type] || item.exam_type}</span>
+                  {item.variant && item.variant !== 'multiple_choice' && <span className="text-[0.68rem] px-2 py-0.5 rounded-full font-medium text-exam-warn bg-yellow-400/8">{VARIANT_LABEL[item.variant]}</span>}
+                  {item.question_count > 0 && <span className="text-[0.68rem] px-2 py-0.5 rounded-full font-medium text-exam-text-secondary bg-white/5">{item.question_count}题</span>}
+                </div>
+                {item.passage && <div className="text-xs text-exam-text-muted truncate">{item.passage.replace(/\n/g, ' ').substring(0, 60)}</div>}
+              </div>
+              <button
+                onClick={(e) => toggleStar(item.id, e)}
+                className={`shrink-0 text-lg transition-colors ${
+                  item.starred ? 'text-yellow-400' : 'text-exam-border hover:text-yellow-400/60'
+                }`}
+              >
+                {item.starred ? '⭐' : '☆'}
+              </button>
             </div>
-            {item.passage && <div className="text-xs text-exam-text-muted truncate">{item.passage.replace(/\n/g, ' ').substring(0, 60)}</div>}
           </div>
         ))}
         <div className="pb-4" />
