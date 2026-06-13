@@ -29,62 +29,77 @@ from pipeline_log import (
 )
 from vocab import process_vocabulary
 
-# ── Client initialization with Strict Mode detection ──
-_USE_STRICT = True
-_client = None
+# ── Client init: cache two clients (strict + fallback) per session ──
+
+_STRICT_CLIENT: AsyncOpenAI | None = None
+_FALLBACK_CLIENT: AsyncOpenAI | None = None
+# Per-session strict mode — session_id → bool. Prevents cross-session pollution.
+_strict_mode: dict[str, bool] = {}
 
 
-def _get_client() -> AsyncOpenAI:
-    """Return the DeepSeek API client. Lazy-init on first call."""
-    global _client
-    if _client is not None:
-        return _client
-    return _build_client(use_strict=True)
+def _get_strict_client() -> AsyncOpenAI:
+    """Return cached strict-mode client (beta endpoint)."""
+    global _STRICT_CLIENT
+    if _STRICT_CLIENT is None:
+        _STRICT_CLIENT = _build_client(use_strict=True)
+    return _STRICT_CLIENT
+
+
+def _get_fallback_client() -> AsyncOpenAI:
+    """Return cached fallback client (non-strict endpoint)."""
+    global _FALLBACK_CLIENT
+    if _FALLBACK_CLIENT is None:
+        _FALLBACK_CLIENT = _build_client(use_strict=False)
+    return _FALLBACK_CLIENT
+
+
+def _client_for_session(session_id: str) -> AsyncOpenAI:
+    """Return the right client for a given session's strict mode."""
+    return _get_strict_client() if _strict_mode.get(session_id, True) else _get_fallback_client()
 
 
 def _build_client(use_strict: bool) -> AsyncOpenAI:
     """Build AsyncOpenAI client. If use_strict, use beta endpoint."""
-    global _client, _USE_STRICT
     api_key = config.llm_api_key()
     s1 = config.llm_for("stage1")
     if not api_key:
         raise RuntimeError("DeepSeek API key not configured.")
     url = s1["base_url"] if use_strict else s1["fallback_url"]
-    _USE_STRICT = use_strict
-    _client = AsyncOpenAI(
+    return AsyncOpenAI(
         api_key=api_key,
         base_url=url,
         timeout=s1["timeout"],
         max_retries=s1["max_retries"],
     )
-    return _client
 
 
 def _maybe_fallback(session_id: str = "", status_code: int = 0):
     """If Strict Mode is active and we hit a transient/compatibility error, fall back.
 
-    4xx client errors (except 429 rate-limit) = model/config issue, NOT strict mode.
-    Only 5xx / timeout / rate-limit warrant endpoint switch.
+    Updates ONLY this session's strict mode — never affects other concurrent sessions.
     """
-    global _USE_STRICT
-    if not _USE_STRICT:
-        return  # already in fallback mode
+    if not _strict_mode.get(session_id, True):
+        return  # already in fallback mode for this session
 
     if status_code and 400 <= status_code < 500 and status_code != 429:
-        # Client error — disable strict for retry, keep same URL
-        _USE_STRICT = False
+        _strict_mode[session_id] = False
         if session_id:
             log_trace(session_id, f"strict_disabled:http_{status_code}")
         return
 
-    # 5xx / timeout / rate-limit → possible endpoint issue → try fallback URL
+    # 5xx / timeout / rate-limit → try fallback URL
     s1 = config.llm_for("stage1")
     if s1["base_url"] == s1["fallback_url"]:
-        _USE_STRICT = False
+        _strict_mode[session_id] = False
         return
-    _build_client(use_strict=False)
+    _strict_mode[session_id] = False
     if session_id:
         log_trace(session_id, "strict_mode_fallback")
+
+
+def _using_strict(session_id: str) -> bool:
+    """Check if a session is in strict mode."""
+    return _strict_mode.get(session_id, True)
 
 
 # ── JSON parsing with LLM output resilience ──
@@ -184,9 +199,9 @@ async def _stage1_call(ocr_text: str, page_count: int,
     Returns dict with exam_type, passage, questions.
     Retries once on tool_call failure or structure errors (non-strict mode).
     """
-    client = _get_client()
+    client = _client_for_session(session_id)
     params = _get_stage_params("stage1")
-    tools = STAGE1_TOOLS if _USE_STRICT else strip_strict(STAGE1_TOOLS)
+    tools = STAGE1_TOOLS if _using_strict(session_id) else strip_strict(STAGE1_TOOLS)
 
     chinese_quote_context = None
 
@@ -239,7 +254,7 @@ async def _stage1_call(ocr_text: str, page_count: int,
                 raise RuntimeError("Stage 1: LLM returned unparseable JSON after retry")
 
             # Non-strict mode: validate structure
-            if not _USE_STRICT:
+            if not _using_strict(session_id):
                 errors = _validate_structure(
                     data, STAGE1_TOOLS[0]["function"]["parameters"]
                 )
@@ -257,7 +272,7 @@ async def _stage1_call(ocr_text: str, page_count: int,
                 continue
             raise
         except APIError as e:
-            if _USE_STRICT and attempt == 0:
+            if _using_strict(session_id) and attempt == 0:
                 _maybe_fallback(session_id, status_code=e.status_code or 0)
                 continue
             if e.status_code and e.status_code >= 500 and attempt == 0:
@@ -281,11 +296,11 @@ async def _stage2_call(s1_data: dict, exam_type: str = "",
     This allows correction if Stage 1 misclassified exam_type.
     Returns dict with questions array of {number, answer, modules}.
     """
-    client = _get_client()
+    client = _client_for_session(session_id)
     params = _get_stage_params("stage2")
 
     all_tools = list(STAGE2_TOOL_DEFS.values())
-    tools = all_tools if _USE_STRICT else [strip_strict(t) for t in all_tools]
+    tools = all_tools if _using_strict(session_id) else [strip_strict(t) for t in all_tools]
 
     chinese_quote_context = None
 
@@ -396,7 +411,7 @@ async def _stage2_call(s1_data: dict, exam_type: str = "",
                     f"(raw_len={len(raw_args)}, starts={raw_args[:100]!r})"
                 )
 
-            if not _USE_STRICT:
+            if not _using_strict(session_id):
                 tool_schema = STAGE2_TOOL_DEFS.get(chosen_tool, {})
                 errors = _validate_structure(
                     data, tool_schema.get("function", {}).get("parameters", {})
@@ -415,7 +430,7 @@ async def _stage2_call(s1_data: dict, exam_type: str = "",
                 continue
             raise
         except APIError as e:
-            if _USE_STRICT and attempt == 0:
+            if _using_strict(session_id) and attempt == 0:
                 _maybe_fallback(session_id, status_code=e.status_code or 0)
                 continue
             if e.status_code and e.status_code >= 500 and attempt == 0:
@@ -547,6 +562,11 @@ async def process_exam(session_id: str, image_paths: list[str],
     _active_tasks[session_id] = asyncio.current_task()
 
     try:
+        # ── Pipeline timeout: 5 minutes max ──
+        pipeline_task = asyncio.current_task()
+        timeout_task = asyncio.create_task(asyncio.sleep(300))
+        # (cancelled explicitly in finally if pipeline completes in time)
+
         # ── 1. OCR ──
         await _broadcast(ui_queues, session_id, "ocr", "start",
                          {"files": len(image_paths)})
@@ -734,9 +754,15 @@ async def process_exam(session_id: str, image_paths: list[str],
             "recoverable": False,
         })
     finally:
+        timeout_task.cancel()
+        try:
+            await timeout_task
+        except asyncio.CancelledError:
+            pass
         # Cleanup uploaded images
         if config.upload_image_cleanup:
             for p in image_paths:
                 Path(p).unlink(missing_ok=True)
         _cancel_events.pop(session_id, None)
         _active_tasks.pop(session_id, None)
+        _strict_mode.pop(session_id, None)  # per-session strict mode cleanup

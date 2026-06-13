@@ -14,6 +14,8 @@ class ExamStore:
 
     def _init_db(self):
         with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS exams (
                     id TEXT PRIMARY KEY,

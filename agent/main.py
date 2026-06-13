@@ -59,6 +59,9 @@ store = ExamStore(str(config.data_dir / "exams.db"))
 # session_id → list[asyncio.Queue]
 ui_queues: dict[str, list[asyncio.Queue]] = {}
 
+# Concurrency control: max 2 concurrent OCR+LLM pipelines (NanoPC-T4, 2GB RAM)
+_pipeline_semaphore = asyncio.Semaphore(2)
+
 
 # ═══════════════════════════════════════════════════════════════
 # Health / Config endpoints
@@ -83,12 +86,12 @@ async def health(deep: bool = False):
 
 async def _deep_health_ping() -> tuple[bool, str]:
     """Ping each configured model. Returns (all_ok, log_detail)."""
-    from engine import _get_client, _get_stage_params, _api_error_detail
+    from engine import _get_strict_client, _get_stage_params, _api_error_detail
     from pipeline_log import _write
     import time as _time
 
     try:
-        client = _get_client()
+        client = _get_strict_client()
     except Exception as e:
         _write({"step": "health_check", "ok": False,
                 "detail": str(e), "ts": _time.time()})
@@ -131,7 +134,8 @@ async def api_config():
 @app.post("/exams")
 async def create_exam(images: list[UploadFile] = File(...)):
     """Upload exam images. Starts async pipeline, returns session_id immediately."""
-    session_id = str(uuid.uuid4())[:8]
+    import secrets
+    session_id = secrets.token_hex(16)  # 128-bit, unguessable in classroom context
 
     image_paths = []
     total_bytes = 0
@@ -153,11 +157,17 @@ async def create_exam(images: list[UploadFile] = File(...)):
         total_bytes += len(data)
         image_paths.append(str(fpath))
 
-    # Fire and forget — SSE endpoint picks up events
+    # Fire and forget — SSE endpoint picks up events. Semaphore controls concurrency.
     log_upload(session_id, len(image_paths), total_bytes)
-    asyncio.create_task(process_exam(session_id, image_paths, ui_queues, store))
+    asyncio.create_task(_pipeline_with_semaphore(session_id, image_paths))
 
     return {"session_id": session_id}
+
+
+async def _pipeline_with_semaphore(session_id: str, image_paths: list[str]):
+    """Run pipeline with concurrency limit."""
+    async with _pipeline_semaphore:
+        await process_exam(session_id, image_paths, ui_queues, store)
 
 
 @app.get("/exams")
@@ -223,6 +233,14 @@ async def batch_delete_exams(request: Request):
 @app.get("/sse/ui")
 async def sse_ui(session: str = Query(...)):
     """SSE event stream for a session. Web UI connects here."""
+    # Validate session exists (prevent random guess connections)
+    from engine import _strict_mode as engine_strict_mode
+    if session not in ui_queues and session not in engine_strict_mode:
+        await asyncio.sleep(0)
+        # Session might be mid-creation — if queues empty now, return 404
+        if session not in ui_queues:
+            return JSONResponse({"error": "session not found"}, 404)
+
     q = asyncio.Queue()
     ui_queues.setdefault(session, []).append(q)
 
@@ -253,10 +271,12 @@ async def sse_ui(session: str = Query(...)):
             queues = ui_queues.get(session, [])
             if q in queues:
                 queues.remove(q)
-            # Cancel backend processing if no listeners remain
             if not queues:
                 ui_queues.pop(session, None)
                 cancel_session(session)
+                # Clean up per-session strict mode state
+                from engine import _strict_mode
+                _strict_mode.pop(session, None)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
