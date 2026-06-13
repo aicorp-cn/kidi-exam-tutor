@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from config import config  # validates at first access
-from engine import process_exam
+from engine import process_exam, cancel_session
 from store import ExamStore
 from pipeline_log import log_upload, init_log_path
 
@@ -212,6 +212,10 @@ async def sse_ui(session: str = Query(...)):
             queues = ui_queues.get(session, [])
             if q in queues:
                 queues.remove(q)
+            # Cancel backend processing if no listeners remain
+            if not queues:
+                ui_queues.pop(session, None)
+                cancel_session(session)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 

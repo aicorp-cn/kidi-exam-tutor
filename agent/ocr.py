@@ -1,4 +1,4 @@
-"""OCR via tesseract CLI with quality gating."""
+"""OCR via tesseract CLI with quality gating and cancellation support."""
 
 import asyncio
 import os
@@ -9,8 +9,11 @@ class OCRError(Exception):
     pass
 
 
-async def ocr_images(image_paths: list[str]) -> str:
+async def ocr_images(image_paths: list[str], cancel_evt: asyncio.Event = None) -> str:
     """Run tesseract on each image, concatenate with PAGE markers.
+
+    Accepts optional cancel_evt — when set, cancels the in-flight tesseract
+    subprocess and raises asyncio.CancelledError.
 
     Raises OCRError if any page produces empty or too-short text.
 
@@ -21,7 +24,7 @@ async def ocr_images(image_paths: list[str]) -> str:
     total = len(image_paths)
 
     for i, path in enumerate(image_paths, 1):
-        text = await _tesseract_page(path)
+        text = await _tesseract_page(path, cancel_evt=cancel_evt)
 
         # Quality gate: empty
         if not text or not text.strip():
@@ -52,12 +55,14 @@ async def ocr_images(image_paths: list[str]) -> str:
     return "\n\n".join(pages)
 
 
-async def _tesseract_page(image_path: str, timeout: float = 60.0) -> str:
-    """Run tesseract on a single image.
+async def _tesseract_page(image_path: str, timeout: float = 60.0,
+                          cancel_evt: asyncio.Event = None) -> str:
+    """Run tesseract on a single image. Cancellable via cancel_evt.
 
     Args:
         image_path: Path to JPEG/PNG image
         timeout: Max seconds for tesseract to complete
+        cancel_evt: When set, kills the tesseract subprocess
 
     Returns:
         Extracted text, or empty string on failure.
@@ -73,9 +78,41 @@ async def _tesseract_page(image_path: str, timeout: float = 60.0) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
+
+        # Race: tesseract completion vs cancellation
+        comm_task = asyncio.create_task(proc.communicate())
+        if cancel_evt:
+            cancel_watch = asyncio.create_task(cancel_evt.wait())
+            done, _ = await asyncio.wait(
+                [comm_task, cancel_watch],
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            cancel_watch.cancel()
+            if cancel_evt.is_set():
+                comm_task.cancel()
+                proc.kill()
+                await proc.wait()
+                raise asyncio.CancelledError("OCR cancelled by user")
+            if comm_task not in done:
+                comm_task.cancel()
+                proc.kill()
+                await proc.wait()
+                raise asyncio.TimeoutError(
+                    f"文字识别超时（{timeout}秒），图片可能过大或系统繁忙，请重试。"
+                )
+            stdout, stderr = await comm_task
+        else:
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    comm_task, timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                raise asyncio.TimeoutError(
+                    f"文字识别超时（{timeout}秒），图片可能过大或系统繁忙，请重试。"
+                )
 
         # Check return code for crash signals
         if proc.returncode == -9:
@@ -91,15 +128,13 @@ async def _tesseract_page(image_path: str, timeout: float = 60.0) -> str:
 
         return stdout.decode("utf-8", errors="replace")
 
-    except asyncio.TimeoutError:
-        raise OCRError(
-            f"文字识别超时（{timeout}秒），图片可能过大或系统繁忙，请重试。"
-        )
+    except OCRError:
+        raise
+    except asyncio.CancelledError:
+        raise
     except FileNotFoundError:
         raise OCRError(
             "文字识别组件未安装。请运行: sudo apt-get install tesseract-ocr tesseract-ocr-eng"
         )
-    except OCRError:
-        raise
     except Exception as e:
         raise OCRError(f"文字识别异常: {str(e)}")

@@ -491,8 +491,21 @@ def _validate_semantic(s1_data: dict, s2_data: dict) -> list[str]:
 # Main Pipeline
 # ═══════════════════════════════════════════════════════════════
 
-# Track active tasks for concurrency control
+# Track active tasks for concurrency control and cancellation
 _active_tasks: dict[str, asyncio.Task] = {}
+_cancel_events: dict[str, asyncio.Event] = {}
+
+
+def cancel_session(session_id: str) -> bool:
+    """Cancel an active processing session. Returns True if found and cancelled."""
+    evt = _cancel_events.pop(session_id, None)
+    task = _active_tasks.pop(session_id, None)
+    if evt:
+        evt.set()
+    if task and not task.done():
+        task.cancel()
+        return True
+    return False
 
 
 async def process_exam(session_id: str, image_paths: list[str],
@@ -505,6 +518,11 @@ async def process_exam(session_id: str, image_paths: list[str],
         ui_queues: Dict[session_id, list[asyncio.Queue]] for SSE broadcasting
         store: ExamStore instance for persistence
     """
+    # Register for cancellation
+    cancel_evt = asyncio.Event()
+    _cancel_events[session_id] = cancel_evt
+    _active_tasks[session_id] = asyncio.current_task()
+
     try:
         # ── 1. OCR ──
         await _broadcast(ui_queues, session_id, "ocr", "start",
@@ -513,7 +531,7 @@ async def process_exam(session_id: str, image_paths: list[str],
         total_bytes = sum(Path(p).stat().st_size for p in image_paths)
         log_ocr_start(session_id, "tesseract", image_paths[0], total_bytes)
         log_trace(session_id, "ocr_start")
-        ocr_text = await ocr_images(image_paths)
+        ocr_text = await ocr_images(image_paths, cancel_evt=cancel_evt)
         log_ocr_result(session_id, "tesseract",
                        (time.time() - t0_ocr) * 1000,
                        len(ocr_text), ocr_text[:200], True)
@@ -663,6 +681,12 @@ async def process_exam(session_id: str, image_paths: list[str],
             "message": user_msg,
             "recoverable": recoverable,
         })
+    except asyncio.CancelledError:
+        log_trace(session_id, "cancelled_by_user")
+        await _broadcast(ui_queues, session_id, "error", "cancelled", {
+            "message": "已取消",
+            "recoverable": True,
+        })
     except Exception as e:
         log_trace(session_id, f"unknown_error: {e}")
         await _broadcast(ui_queues, session_id, "error", "unknown", {
@@ -674,4 +698,5 @@ async def process_exam(session_id: str, image_paths: list[str],
         if config.upload_image_cleanup:
             for p in image_paths:
                 Path(p).unlink(missing_ok=True)
+        _cancel_events.pop(session_id, None)
         _active_tasks.pop(session_id, None)
