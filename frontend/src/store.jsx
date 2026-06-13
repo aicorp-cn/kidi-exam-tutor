@@ -27,6 +27,18 @@ export function AppProvider({ children }) {
   const [historyVersion, setHistoryVersion] = useState(0)
   const [config, setConfig] = useState({ apiBase:'', pageSize:20, allowedTypes:[] })
 
+  // Load server config on mount
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => setConfig({
+        apiBase: cfg.api_base || '',
+        pageSize: cfg.page_size || 20,
+        allowedTypes: cfg.allowed_types || [],
+      }))
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     const onHash = () => {
       const s = getScreenFromHash()
@@ -91,9 +103,9 @@ export function AppProvider({ children }) {
       if (data.questions && data.questions.length > 0) {
         goReview(data)
       } else {
-        navigate('home')
+        navigate('history')
       }
-    } catch { navigate('home') }
+    } catch { navigate('history') }
   }, [goReview, navigate, switchScreen])
 
   return (
