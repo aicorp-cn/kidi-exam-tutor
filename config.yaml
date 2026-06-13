@@ -10,7 +10,7 @@ server:
   cors_origins: ["*"]              # 生产环境请改为具体域名，如 ["https://exam.example.com"]
   api_prefix: ""                   # 反向代理路径前缀，如 "/exam-tutor"（不带末尾斜杠）
   ssl:
-    enabled: true                  # 设为 true 启用 HTTPS（需先生成 cert.pem / key.pem）
+    enabled: false                 # 设为 true 启用 HTTPS（需先生成 cert.pem / key.pem）
     cert_file: "./agent/cert.pem"  # 自签证书，仅限开发/内网
     key_file: "./agent/key.pem"
 

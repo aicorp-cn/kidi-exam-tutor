@@ -175,6 +175,19 @@ async def get_exam(exam_id: str):
     return exam
 
 
+@app.get("/review/{exam_id}")
+async def get_review(exam_id: str):
+    """Get full review data for an exam — including questions, warnings, and vocabulary insight.
+
+    This is the unified endpoint for history replay. Returns the same shape
+    as the SSE 'stage2 done' event, ensuring one code path for review data.
+    """
+    data = store.get_review(exam_id)
+    if not data:
+        return JSONResponse({"error": "not found"}, 404)
+    return data
+
+
 @app.post("/exams/{exam_id}/star")
 async def toggle_star(exam_id: str):
     """Toggle starred status on an exam. Returns {exam_id, starred: bool}."""

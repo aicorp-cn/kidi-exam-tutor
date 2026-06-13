@@ -8,9 +8,14 @@ export function useSSE() {
   const [result, setResult] = useState(null)
   const esRef = useRef(null)
   const abortedRef = useRef(false)
+  const abortRef = useRef(null)  // AbortController for upload phase
 
   const cancel = useCallback(() => {
     abortedRef.current = true
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
     if (esRef.current) {
       esRef.current.close()
       esRef.current = null
@@ -29,8 +34,16 @@ export function useSSE() {
     const fd = new FormData()
     files.forEach(f => fd.append('images', f))
 
+    // AbortController for upload phase — enables cancel during POST /exams
+    abortRef.current = new AbortController()
+
     try {
-      const r = await fetch(apiBase + '/exams', { method:'POST', body:fd })
+      const r = await fetch(apiBase + '/exams', {
+        method: 'POST',
+        body: fd,
+        signal: abortRef.current.signal,
+      })
+      abortRef.current = null
       const body = await r.json().catch(() => ({}))
       if (body.error) { setError({ message:body.error, recoverable:true }); setStage('error'); return }
       if (!body.session_id) { setError({ message:'服务响应异常', recoverable:true }); setStage('error'); return }

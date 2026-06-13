@@ -83,20 +83,12 @@ export function AppProvider({ children }) {
 
   const loadReviewFromHistory = useCallback(async (id, apiBase) => {
     switchScreen('processing')
-    setPendingFiles([])  // empty array = intentional (distinguishes from null = dead)
+    setPendingFiles([])
     try {
-      const r = await fetch(apiBase + '/exams/' + id)
-      const e = await r.json()
-      if (e.tutorial) {
-        goReview({
-          questions: JSON.parse(e.tutorial),
-          exam_id: e.id,
-          exam_type: e.exam_type || '',
-          variant: e.variant || '',
-          passage: e.passage || '',
-          s1_questions: e.s1_questions ? JSON.parse(e.s1_questions) : [],
-          warnings: [],
-        })
+      const r = await fetch(apiBase + '/review/' + id)
+      const data = await r.json()
+      if (data.questions && data.questions.length > 0) {
+        goReview(data)
       } else {
         navigate('home')
       }

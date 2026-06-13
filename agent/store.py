@@ -103,22 +103,110 @@ class ExamStore:
             )
         return new_val == 1
 
-    def delete_exam(self, exam_id: str) -> bool:
-        """Delete a single exam. Returns True if deleted."""
+    def get_review(self, exam_id: str) -> dict | None:
+        """Return full review data with vocabulary insight.
+
+        Single source of truth for review data — used by both SSE (new exams)
+        and API (history replay). Returns None if exam not found.
+        """
+        exam = self.get_exam(exam_id)
+        if not exam:
+            return None
+
+        result = {
+            "exam_id": exam["id"],
+            "exam_type": exam.get("exam_type", ""),
+            "variant": exam.get("variant", ""),
+            "passage": exam.get("passage", ""),
+        }
+
+        # Deserialize JSON fields
+        for field, default in [("tutorial", []), ("s1_questions", []), ("warnings", [])]:
+            try:
+                result["questions" if field == "tutorial" else field] = json.loads(exam.get(field, "[]"))
+            except (json.JSONDecodeError, TypeError):
+                result["questions" if field == "tutorial" else field] = default
+
+        result["vocabulary"] = self._vocab_for_exam(exam_id)
+        return result
+
+    def _vocab_for_exam(self, exam_id: str) -> dict:
+        """Build vocabulary tiers for a specific exam from stored data."""
+        from vocab import get_curriculum
+        curriculum = get_curriculum()
+
         with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT word, pos, chinese, appearance_count, exam_ids FROM vocabulary"
+            ).fetchall()
+
+        tiers = {"high": [], "medium": [], "low": []}
+        for row in rows:
+            ids = json.loads(row["exam_ids"])
+            if exam_id not in ids:
+                continue
+
+            w = row["word"]
+            count = row["appearance_count"]
+            old_count = count - 1  # classify uses count BEFORE current recording
+
+            if w in curriculum:
+                cur = curriculum[w]
+                entry = {"word": w, "pos": cur[0], "chinese": cur[1], "count": old_count}
+                tier_key = "high" if old_count >= 3 else "medium"
+            else:
+                entry = {"word": w, "pos": row["pos"], "chinese": row["chinese"], "count": old_count}
+                tier_key = "medium" if old_count >= 2 else "low"
+
+            tiers[tier_key].append(entry)
+
+        for tier in tiers.values():
+            tier.sort(key=lambda x: x["word"])
+        return tiers
+
+    def delete_exam(self, exam_id: str) -> bool:
+        """Delete a single exam and clean vocabulary references. Returns True if deleted."""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            self._clean_vocab_refs(conn, [exam_id])
             cur = conn.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
             return cur.rowcount > 0
 
     def delete_exams(self, ids: list[str]) -> int:
-        """Delete multiple exams. Returns count deleted."""
+        """Delete multiple exams and clean vocabulary references. Returns count deleted."""
         if not ids:
             return 0
         with sqlite3.connect(str(self.db_path)) as conn:
+            self._clean_vocab_refs(conn, ids)
             placeholders = ",".join("?" for _ in ids)
             cur = conn.execute(
                 f"DELETE FROM exams WHERE id IN ({placeholders})", ids
             )
             return cur.rowcount
+
+    def _clean_vocab_refs(self, conn, exam_ids: list[str]):
+        """Remove exam references from vocabulary table. Deletes words with zero remaining appearances."""
+        rows = conn.execute(
+            "SELECT word, exam_ids, appearance_count FROM vocabulary"
+        ).fetchall()
+        for word, exam_ids_str, count in rows:
+            ids = json.loads(exam_ids_str)
+            removed = 0
+            for eid in exam_ids:
+                if eid in ids:
+                    ids.remove(eid)
+                    removed += 1
+            if removed == 0:
+                continue
+            new_count = count - removed
+            if new_count <= 0:
+                conn.execute("DELETE FROM vocabulary WHERE word = ?", (word,))
+            else:
+                conn.execute(
+                    "UPDATE vocabulary SET exam_ids = ?, appearance_count = ?, "
+                    "last_seen = datetime('now') WHERE word = ?",
+                    (json.dumps(ids), new_count, word),
+                )
 
     def list_exams(self, page: int = 1, limit: int = 20,
                    search: str = "", exam_type: str = "") -> tuple[list[dict], int, dict]:
