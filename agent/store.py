@@ -2,7 +2,6 @@
 
 import sqlite3
 import uuid
-import time
 import json
 from pathlib import Path
 
@@ -27,13 +26,20 @@ class ExamStore:
                     ocr_text TEXT NOT NULL DEFAULT '',
                     tutorial TEXT NOT NULL DEFAULT '',
                     warnings TEXT NOT NULL DEFAULT '[]',
+                    starred INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL DEFAULT (datetime('now'))
                 )
             """)
-            for col in ("variant", "passage", "s1_questions", "question_count"):
+            # Migration: add columns missing from older schemas
+            for col, col_def in [
+                ("variant", "TEXT NOT NULL DEFAULT ''"),
+                ("passage", "TEXT NOT NULL DEFAULT ''"),
+                ("s1_questions", "TEXT NOT NULL DEFAULT ''"),
+                ("question_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("starred", "INTEGER NOT NULL DEFAULT 0"),
+            ]:
                 try:
-                    conn.execute(f"ALTER TABLE exams ADD COLUMN {col} "
-                                 f"{'TEXT NOT NULL DEFAULT ' + chr(39) + chr(39) if col != 'question_count' else 'INTEGER NOT NULL DEFAULT 0'}")
+                    conn.execute(f"ALTER TABLE exams ADD COLUMN {col} {col_def}")
                 except sqlite3.OperationalError:
                     pass
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_exams_session ON exams(session_id)""")
@@ -70,6 +76,37 @@ class ExamStore:
             return None
         return dict(row)
 
+    def toggle_star(self, exam_id: str) -> bool:
+        """Toggle starred status. Returns new state (True=starred)."""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            row = conn.execute(
+                "SELECT starred FROM exams WHERE id = ?", (exam_id,)
+            ).fetchone()
+            if not row:
+                return False
+            new_val = 1 if row[0] == 0 else 0
+            conn.execute(
+                "UPDATE exams SET starred = ? WHERE id = ?", (new_val, exam_id)
+            )
+        return new_val == 1
+
+    def delete_exam(self, exam_id: str) -> bool:
+        """Delete a single exam. Returns True if deleted."""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cur = conn.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
+            return cur.rowcount > 0
+
+    def delete_exams(self, ids: list[str]) -> int:
+        """Delete multiple exams. Returns count deleted."""
+        if not ids:
+            return 0
+        with sqlite3.connect(str(self.db_path)) as conn:
+            placeholders = ",".join("?" for _ in ids)
+            cur = conn.execute(
+                f"DELETE FROM exams WHERE id IN ({placeholders})", ids
+            )
+            return cur.rowcount
+
     def list_exams(self, page: int = 1, limit: int = 20,
                    search: str = "", exam_type: str = "") -> tuple[list[dict], int, dict]:
         """List recent exams with optional search and type filter.
@@ -97,8 +134,8 @@ class ExamStore:
 
             rows = conn.execute(
                 f"SELECT id, session_id, exam_type, variant, passage, "
-                f"s1_questions, question_count, created_at FROM exams "
-                f"{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                f"s1_questions, question_count, starred, created_at FROM exams "
+                f"{where} ORDER BY starred DESC, created_at DESC LIMIT ? OFFSET ?",
                 params + [limit, offset],
             ).fetchall()
 

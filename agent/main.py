@@ -175,6 +175,32 @@ async def get_exam(exam_id: str):
     return exam
 
 
+@app.post("/exams/{exam_id}/star")
+async def toggle_star(exam_id: str):
+    """Toggle starred status on an exam. Returns {exam_id, starred: bool}."""
+    new_state = store.toggle_star(exam_id)
+    return {"exam_id": exam_id, "starred": new_state}
+
+
+@app.delete("/exams/{exam_id}")
+async def delete_exam(exam_id: str):
+    """Delete a single exam record."""
+    if store.delete_exam(exam_id):
+        return {"deleted": True, "exam_id": exam_id}
+    return JSONResponse({"error": "not found"}, 404)
+
+
+@app.post("/exams/batch-delete")
+async def batch_delete_exams(request: Request):
+    """Delete multiple exam records. Body: {ids: [...]}."""
+    body = await request.json()
+    ids = body.get("ids", [])
+    if not ids:
+        return JSONResponse({"error": "ids required"}, 400)
+    count = store.delete_exams(ids)
+    return {"deleted": count, "ids": ids}
+
+
 # ═══════════════════════════════════════════════════════════════
 # SSE Endpoint
 # ═══════════════════════════════════════════════════════════════
