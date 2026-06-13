@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 
 export function useSSE() {
-  const [stage, setStage] = useState('idle') // idle | uploading | ocr | stage1 | stage2 | error | done
+  const [stage, setStage] = useState('idle') // idle | uploading | ocr | stage1 | stage2 | error | done | cancelled
   const [statusText, setStatusText] = useState('')
   const [detail, setDetail] = useState('')
   const [error, setError] = useState(null)
@@ -15,7 +15,7 @@ export function useSSE() {
       esRef.current.close()
       esRef.current = null
     }
-    setStage('idle')
+    setStage('cancelled')
   }, [])
 
   const start = useCallback(async (files, apiBase) => {

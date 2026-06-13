@@ -26,10 +26,10 @@ export function ProcessingScreen({ files: initialFiles }) {
 
   // Navigate home when user cancels
   useEffect(() => {
-    if (sse.stage === 'idle' && initialFiles?.length) {
+    if (sse.stage === 'cancelled') {
       goHome()
     }
-  }, [sse.stage, goHome, initialFiles])
+  }, [sse.stage, goHome])
 
   // Navigate to review when done — cancel timeout
   useEffect(() => {
@@ -96,7 +96,7 @@ export function ProcessingScreen({ files: initialFiles }) {
           <div className="text-sm text-exam-text-muted">{sse.detail}</div>
           <div className="text-xs text-exam-text-muted opacity-40">通常在 15-30 秒内完成</div>
           {['uploading','ocr','stage1','stage2'].includes(sse.stage) && (
-            <button onClick={sse.cancel} className="mt-2 text-xs text-exam-text-muted border border-exam-border px-6 py-1.5 rounded-full hover:text-exam-error hover:border-exam-error transition-colors">
+            <button onClick={() => { sse.cancel(); goHome() }} className="mt-2 text-xs text-exam-text-muted border border-exam-border px-6 py-1.5 rounded-full hover:text-exam-error hover:border-exam-error transition-colors">
               取消
             </button>
           )}
