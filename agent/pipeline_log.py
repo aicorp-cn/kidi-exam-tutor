@@ -32,6 +32,12 @@ def init_log_path(path: str):
 
 def _write(event: dict):
     event["ts"] = time.time()
+    # Rotate if log exceeds 5 MB
+    if LOG_PATH.exists() and LOG_PATH.stat().st_size > 5 * 1024 * 1024:
+        bak = LOG_PATH.with_suffix(".log.1")
+        if bak.exists():
+            bak.unlink()
+        LOG_PATH.rename(bak)
     with open(LOG_PATH, "a") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 

@@ -157,7 +157,7 @@ def _api_error_detail(e: APIError) -> str:
 async def _broadcast(queues: dict, session_id: str, stage: str,
                      status: str, data: dict = None):
     """Send SSE event to all queues for a session."""
-    qs = queues.get(session_id, [])
+    qs = list(queues.get(session_id, []))  # snapshot to avoid mutation race
     event = {"stage": stage, "status": status, **(data or {})}
     for q in qs:
         await q.put(event)

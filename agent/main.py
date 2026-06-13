@@ -142,8 +142,10 @@ async def create_exam(images: list[UploadFile] = File(...)):
             )
         data = await img.read()
         if len(data) > config.upload_max_file_size:
+            size_mb = round(len(data) / 1048576, 1)
+            limit_mb = round(config.upload_max_file_size / 1048576, 1)
             return JSONResponse(
-                {"error": f"图片过大: {len(data)} bytes (max {config.upload_max_file_size})"}, 400
+                {"error": f"图片过大（{size_mb}MB），上限为 {limit_mb}MB"}, 400
             )
 
         fpath = config.data_dir / "images" / f"{session_id}_{img.filename}"

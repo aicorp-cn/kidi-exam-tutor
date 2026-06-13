@@ -35,18 +35,16 @@ export function ProcessingScreen({ files: initialFiles }) {
   useEffect(() => {
     if (sse.result && sse.stage === 'done') {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
-      setTimeout(() => {
-        goReview({
-          questions: sse.result.questions || [],
-          exam_id: sse.result.exam_id || '',
-          exam_type: sse.result.exam_type || '',
-          variant: sse.result.variant || '',
-          passage: sse.result.passage || '',
-          s1_questions: sse.result.s1_questions || [],
-          warnings: sse.result.warnings || [],
-          vocabulary: sse.result.vocabulary || {high:[], medium:[], low:[]},
-        })
-      }, 400)
+      goReview({
+        questions: sse.result.questions || [],
+        exam_id: sse.result.exam_id || '',
+        exam_type: sse.result.exam_type || '',
+        variant: sse.result.variant || '',
+        passage: sse.result.passage || '',
+        s1_questions: sse.result.s1_questions || [],
+        warnings: sse.result.warnings || [],
+        vocabulary: sse.result.vocabulary || {high:[], medium:[], low:[]},
+      })
     }
   }, [sse.result, sse.stage, goReview])
 
