@@ -46,6 +46,19 @@ class ExamStore:
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_exams_created ON exams(created_at DESC)""")
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_exams_type ON exams(exam_type)""")
 
+            # Vocabulary tracking
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS vocabulary (
+                    word TEXT PRIMARY KEY,
+                    pos TEXT NOT NULL DEFAULT '',
+                    chinese TEXT NOT NULL DEFAULT '',
+                    exam_ids TEXT NOT NULL DEFAULT '[]',
+                    first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+                    last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+                    appearance_count INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+
     def save(self, *, session_id: str, exam_type: str,
              ocr_text: str, tutorial: str,
              variant: str = "", passage: str = "",
@@ -149,3 +162,44 @@ class ExamStore:
                     type_counts[r["exam_type"]] = r["cnt"]
 
         return [dict(r) for r in rows], total, type_counts
+
+    # ── Vocabulary ──
+
+    def vocab_lookup(self, words: list[str]) -> dict[str, dict]:
+        """Return appearance history for a list of lowercase words.
+        Returns {word: {appearance_count, exam_ids, first_seen} | None}.
+        """
+        if not words:
+            return {}
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            placeholders = ",".join("?" for _ in words)
+            rows = conn.execute(
+                f"SELECT word, pos, chinese, exam_ids, first_seen, appearance_count "
+                f"FROM vocabulary WHERE word IN ({placeholders})",
+                words,
+            ).fetchall()
+        return {r["word"]: dict(r) for r in rows}
+
+    def vocab_record(self, word: str, pos: str, chinese: str, exam_id: str):
+        """Record a word's appearance in an exam. Upserts."""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            row = conn.execute(
+                "SELECT exam_ids, appearance_count FROM vocabulary WHERE word = ?",
+                (word,),
+            ).fetchone()
+            if row:
+                ids = json.loads(row[0])
+                if exam_id not in ids:
+                    ids.append(exam_id)
+                conn.execute(
+                    "UPDATE vocabulary SET exam_ids=?, appearance_count=?, "
+                    "last_seen=datetime('now') WHERE word=?",
+                    (json.dumps(ids), row[1] + 1, word),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO vocabulary (word, pos, chinese, exam_ids, appearance_count) "
+                    "VALUES (?, ?, ?, ?, 1)",
+                    (word, pos, chinese, json.dumps([exam_id])),
+                )

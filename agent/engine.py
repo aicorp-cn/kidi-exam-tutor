@@ -27,6 +27,7 @@ from pipeline_log import (
     log_llm_start, log_llm_result,
     log_trace, log_variant_detect, log_stage_retry,
 )
+from vocab import process_vocabulary
 
 # ── Client initialization with Strict Mode detection ──
 _USE_STRICT = True
@@ -612,7 +613,7 @@ async def process_exam(session_id: str, image_paths: list[str],
         sem_warnings = _validate_semantic(s1_data, s2_data)
         warnings.extend(sem_warnings)
 
-        # ── 5. Store + SSE ──
+        # ── 5. Store + Vocabulary + SSE ──
         exam_id = store.save(
             session_id=session_id,
             exam_type=exam_type,
@@ -624,6 +625,13 @@ async def process_exam(session_id: str, image_paths: list[str],
             tutorial=json.dumps(s2_data["questions"], ensure_ascii=False),
             warnings=warnings,
         )
+
+        # Extract and classify vocabulary
+        vocab_text = s1_data.get("passage", "") + " "
+        for q in s1_data.get("questions", []):
+            vocab_text += (q.get("stem", "") or q.get("sentence_with_blank", "") or q.get("statement", "")) + " "
+        vocab_insight = process_vocabulary(vocab_text, exam_id, store)
+
         await _broadcast(ui_queues, session_id, "stage2", "done", {
             "questions": s2_data["questions"],
             "exam_id": exam_id,
@@ -632,6 +640,7 @@ async def process_exam(session_id: str, image_paths: list[str],
             "passage": s1_data.get("passage", ""),
             "s1_questions": s1_data.get("questions", []),
             "warnings": warnings,
+            "vocabulary": vocab_insight,
         })
 
     except OCRError as e:
