@@ -338,7 +338,7 @@ class Config:
                 "webui_present": (self.webui_dir / "index.html").exists(),
                 "llm_configured": bool(self._llm.get("model")),
             },
-            "version": "5.0.0",
+            "version": "6.1.0",
             "warnings": self._warnings,
         }
 

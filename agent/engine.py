@@ -111,31 +111,31 @@ _CHINESE_QUOTE_RE = __import__('re').compile(
 )
 
 
-def _parse_json(raw: str) -> tuple[dict | None, bool]:
-    """Parse JSON from LLM tool call arguments. Returns (data, bool).
+def _parse_json(raw: str) -> dict | None:
+    """Parse JSON from LLM tool call arguments. Returns dict or None.
 
     Chinese-quote fast-fail: if raw contains ASCII " between CJK characters,
     return None immediately — this JSON is structurally broken by the LLM
     using ASCII quotes inside Chinese text values.
     """
     if not raw or not raw.strip():
-        return None, False
+        return None
 
     if _CHINESE_QUOTE_RE.search(raw):
-        return None, False
+        return None
 
     try:
-        return json.loads(raw), False
+        return json.loads(raw)
     except json.JSONDecodeError:
         pass
 
     try:
         decoder = json.JSONDecoder()
-        return decoder.raw_decode(raw)[0], False
+        return decoder.raw_decode(raw)[0]
     except json.JSONDecodeError:
         pass
 
-    return None, False
+    return None
 
 
 def _validate_structure(data: dict, schema: dict) -> list[str]:
@@ -236,7 +236,7 @@ async def _stage1_call(ocr_text: str, page_count: int,
                     continue
                 raise RuntimeError("Stage 1: LLM did not call parse_exam after retry")
 
-            data, _ = _parse_json(
+            data = _parse_json(
                 raw_args := response.choices[0].message.tool_calls[0].function.arguments
             )
             if data is None:
@@ -383,7 +383,7 @@ async def _stage2_call(s1_data: dict, exam_type: str = "",
                     )
                 return {"questions": all_results}
 
-            data, _ = _parse_json(
+            data = _parse_json(
                 raw_args := response.choices[0].message.tool_calls[0].function.arguments
             )
             if data is None:
@@ -515,8 +515,9 @@ def _validate_semantic(s1_data: dict, s2_data: dict) -> list[str]:
             warnings.append(f"第{qid}题：Stage 2 未生成（可能被遗漏）")
             continue
 
-        # Search in all module text
-        s2_text = json.dumps(s2q.get("modules", {}), ensure_ascii=False).lower()
+        # Search in all module text — concatenate raw values, not JSON
+        modules = s2q.get("modules", {})
+        s2_text = " ".join(str(v) for v in modules.values()).lower()
         found = any(p.lower() in s2_text for p in phrases)
         if not found:
             best = phrases[0] if phrases else key_text[:40]
@@ -547,7 +548,7 @@ def cancel_session(session_id: str) -> bool:
 
 
 async def process_exam(session_id: str, image_paths: list[str],
-                       ui_queues: dict, store) -> None:
+                       ui_queues: dict, store, user_id: str = "") -> None:
     """Full pipeline: OCR → Stage 1 → Stage 2 → Store → SSE.
 
     Args:
@@ -562,136 +563,17 @@ async def process_exam(session_id: str, image_paths: list[str],
     _active_tasks[session_id] = asyncio.current_task()
 
     try:
-        # ── Pipeline timeout: 5 minutes max ──
-        pipeline_task = asyncio.current_task()
-        timeout_task = asyncio.create_task(asyncio.sleep(300))
-        # (cancelled explicitly in finally if pipeline completes in time)
-
-        # ── 1. OCR ──
-        await _broadcast(ui_queues, session_id, "ocr", "start",
-                         {"files": len(image_paths)})
-        t0_ocr = time.time()
-        total_bytes = sum(Path(p).stat().st_size for p in image_paths)
-        log_ocr_start(session_id, "tesseract", image_paths[0], total_bytes)
-        log_trace(session_id, "ocr_start")
-        ocr_text = await ocr_images(image_paths, cancel_evt=cancel_evt)
-        log_ocr_result(session_id, "tesseract",
-                       (time.time() - t0_ocr) * 1000,
-                       len(ocr_text), ocr_text[:200], True)
-        await _broadcast(ui_queues, session_id, "ocr", "done",
-                         {"method": "tesseract", "chars": len(ocr_text)})
-        log_trace(session_id, f"ocr_done chars={len(ocr_text)}")
-
-        # ── 2. Stage 1 ──
-        await _broadcast(ui_queues, session_id, "stage1", "start", {})
-        log_stage1_entry(session_id)
-        s1_data = await _stage1_call(ocr_text, len(image_paths),
-                                      session_id=session_id)
-        exam_type = s1_data["exam_type"]
-        q_count = len(s1_data["questions"])
-        variant = detect_variant(s1_data)
-        log_variant_detect(session_id, variant, exam_type)
-        await _broadcast(ui_queues, session_id, "stage1", "done", {
-            "exam_type": exam_type,
-            "question_count": q_count,
-            "variant": variant,
-        })
-        log_stage1_result(session_id, q_count=q_count, exam_type=exam_type,
-                          success=True)
-
-        # ── 2.5 Variant check ──
-        if variant == "empty":
-            raise RuntimeError("EMPTY_EXAM:未在图片中识别到题目，请确认试卷图片清晰且包含题目。")
-        if variant == "passage_only":
-            raise RuntimeError("PASSAGE_ONLY:只识别到文章，未找到题目。请上传包含题目的页面。")
-        if variant == "open_ended":
-            if exam_type in ("reading_comp", "true_false"):
-                type_label = {"reading_comp": "阅读理解", "true_false": "正误判断"}.get(exam_type, exam_type)
-                raise RuntimeError(
-                    f"OPEN_ENDED_UNSUPPORTED:识别到{type_label}题但未提取到选项——"
-                    f"这通常是文字识别问题，请重新拍摄清晰图片。"
-                )
-        if exam_type not in STAGE2_TOOL_NAME:
-            raise RuntimeError(f"BAD_EXAM_TYPE:Unknown exam_type: {exam_type}")
-
-        # ── 3. Stage 2 (with heartbeat) ──
-        # Model picks the right tool from all 5 — auto-corrects exam_type if needed
-        await _broadcast(ui_queues, session_id, "stage2", "start",
-                         {"question_count": q_count})
-        s2_params = _get_stage_params("stage2")
-        log_llm_start(session_id, len(ocr_text), s2_params["model"])
-
-        heartbeat_task = asyncio.create_task(
-            _heartbeat_loop(ui_queues, session_id,
-                           interval=s2_params.get("heartbeat_interval_s", 5.0))
+        await asyncio.wait_for(
+            _run_pipeline(session_id, image_paths, ui_queues, store, user_id, cancel_evt),
+            timeout=300,
         )
-        t0 = time.time()
-        try:
-            s2_data = await _stage2_call(s1_data,
-                                          exam_type=exam_type,
-                                          variant=variant,
-                                          session_id=session_id,
-                                          cancel_evt=cancel_evt)
-        finally:
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
-
-        log_llm_result(session_id,
-                       duration_ms=(time.time() - t0) * 1000,
-                       output_length=len(json.dumps(s2_data)),
-                       question_marker_count=len(s2_data.get("questions", [])),
-                       success=True)
-
-        # ── 4. Soft validation ──
-        warnings = []
-        if len(s2_data["questions"]) != q_count:
-            warnings.append(
-                f"题数不一致：Stage 1 识别 {q_count} 题，"
-                f"Stage 2 生成 {len(s2_data['questions'])} 题"
-            )
-        # Semantic cross-check: Stage 1 stems vs Stage 2 tutorial text
-        sem_warnings = _validate_semantic(s1_data, s2_data)
-        warnings.extend(sem_warnings)
-
-        # ── 5. Store + Vocabulary + SSE ──
-        exam_id = store.save(
-            session_id=session_id,
-            exam_type=exam_type,
-            variant=variant,
-            passage=s1_data.get("passage", ""),
-            s1_questions=json.dumps(s1_data.get("questions", []), ensure_ascii=False),
-            question_count=q_count,
-            ocr_text=ocr_text,
-            tutorial=json.dumps(s2_data["questions"], ensure_ascii=False),
-            warnings=warnings,
-        )
-
-        # Extract and classify vocabulary — from passage + stems + options
-        vocab_text = s1_data.get("passage", "") + " "
-        for q in s1_data.get("questions", []):
-            vocab_text += (q.get("stem", "") or q.get("sentence_with_blank", "") or q.get("statement", "")) + " "
-            for opt_text in q.get("options", {}).values():
-                vocab_text += opt_text + " "
-        vocab_insight = process_vocabulary(vocab_text, exam_id, store)
-
-        await _broadcast(ui_queues, session_id, "stage2", "done", {
-            "questions": s2_data["questions"],
-            "exam_id": exam_id,
-            "exam_type": exam_type,
-            "variant": variant,
-            "passage": s1_data.get("passage", ""),
-            "s1_questions": s1_data.get("questions", []),
-            "warnings": warnings,
-            "vocabulary": vocab_insight,
+    except asyncio.TimeoutError:
+        log_trace(session_id, "pipeline_timeout:300s")
+        await _broadcast(ui_queues, session_id, "error", "ocr_failed", {
+            "message": "处理超时，请稍后重试或减少图片数量。",
+            "recoverable": True,
         })
-
     except OCRError as e:
-        log_ocr_result(session_id, "tesseract",
-                       (time.time() - t0_ocr) * 1000,
-                       0, str(e)[:200], False)
         log_trace(session_id, f"ocr_error: {e}")
         await _broadcast(ui_queues, session_id, "error", "ocr_failed",
                          {"message": str(e), "recoverable": True})
@@ -701,16 +583,9 @@ async def process_exam(session_id: str, image_paths: list[str],
             "message": "AI 服务暂时不可用，请稍后重试",
             "recoverable": True,
         })
-    except asyncio.TimeoutError as e:
-        log_trace(session_id, f"timeout_error: {e}")
-        await _broadcast(ui_queues, session_id, "error", "ocr_failed", {
-            "message": str(e),
-            "recoverable": True,
-        })
     except APIError as e:
         detail = _api_error_detail(e)
         log_trace(session_id, f"api_error:{e.status_code}:{detail}")
-        # User-facing: generic, actionable, no technical detail leaked
         if e.status_code and e.status_code >= 500:
             user_msg = "AI 服务暂时不可用，请稍后重试。"
             recoverable = True
@@ -726,7 +601,6 @@ async def process_exam(session_id: str, image_paths: list[str],
         })
     except RuntimeError as e:
         msg = str(e)
-        # Prefixed errors → user-actionable, show the message
         if msg.startswith(("EMPTY_EXAM:", "PASSAGE_ONLY:", "OPEN_ENDED_UNSUPPORTED:")):
             user_msg = msg.split(":", 1)[1]
             recoverable = True
@@ -754,11 +628,6 @@ async def process_exam(session_id: str, image_paths: list[str],
             "recoverable": False,
         })
     finally:
-        timeout_task.cancel()
-        try:
-            await timeout_task
-        except asyncio.CancelledError:
-            pass
         # Cleanup uploaded images
         if config.upload_image_cleanup:
             for p in image_paths:
@@ -766,3 +635,127 @@ async def process_exam(session_id: str, image_paths: list[str],
         _cancel_events.pop(session_id, None)
         _active_tasks.pop(session_id, None)
         _strict_mode.pop(session_id, None)  # per-session strict mode cleanup
+
+
+async def _run_pipeline(session_id: str, image_paths: list[str],
+                        ui_queues: dict, store, user_id: str,
+                        cancel_evt: asyncio.Event) -> None:
+    """Pipeline body: OCR → Stage 1 → Stage 2 → Store → SSE."""
+    # ── 1. OCR ──
+    await _broadcast(ui_queues, session_id, "ocr", "start",
+                     {"files": len(image_paths)})
+    t0_ocr = time.time()
+    total_bytes = sum(Path(p).stat().st_size for p in image_paths)
+    log_ocr_start(session_id, "tesseract", image_paths[0], total_bytes)
+    log_trace(session_id, "ocr_start")
+    ocr_text = await ocr_images(image_paths, cancel_evt=cancel_evt)
+    log_ocr_result(session_id, "tesseract",
+                   (time.time() - t0_ocr) * 1000,
+                   len(ocr_text), ocr_text[:200], True)
+    await _broadcast(ui_queues, session_id, "ocr", "done",
+                     {"method": "tesseract", "chars": len(ocr_text)})
+    log_trace(session_id, f"ocr_done chars={len(ocr_text)}")
+
+    # ── 2. Stage 1 ──
+    await _broadcast(ui_queues, session_id, "stage1", "start", {})
+    log_stage1_entry(session_id)
+    s1_data = await _stage1_call(ocr_text, len(image_paths),
+                                  session_id=session_id)
+    exam_type = s1_data["exam_type"]
+    q_count = len(s1_data["questions"])
+    variant = detect_variant(s1_data)
+    log_variant_detect(session_id, variant, exam_type)
+    await _broadcast(ui_queues, session_id, "stage1", "done", {
+        "exam_type": exam_type,
+        "question_count": q_count,
+        "variant": variant,
+    })
+    log_stage1_result(session_id, q_count=q_count, exam_type=exam_type,
+                      success=True)
+
+    # ── 2.5 Variant check ──
+    if variant == "empty":
+        raise RuntimeError("EMPTY_EXAM:未在图片中识别到题目，请确认试卷图片清晰且包含题目。")
+    if variant == "passage_only":
+        raise RuntimeError("PASSAGE_ONLY:只识别到文章，未找到题目。请上传包含题目的页面。")
+    if variant == "open_ended":
+        if exam_type in ("reading_comp", "true_false"):
+            type_label = {"reading_comp": "阅读理解", "true_false": "正误判断"}.get(exam_type, exam_type)
+            raise RuntimeError(
+                f"OPEN_ENDED_UNSUPPORTED:识别到{type_label}题但未提取到选项——"
+                f"这通常是文字识别问题，请重新拍摄清晰图片。"
+            )
+    if exam_type not in STAGE2_TOOL_NAME:
+        raise RuntimeError(f"BAD_EXAM_TYPE:Unknown exam_type: {exam_type}")
+
+    # ── 3. Stage 2 (with heartbeat) ──
+    await _broadcast(ui_queues, session_id, "stage2", "start",
+                     {"question_count": q_count})
+    s2_params = _get_stage_params("stage2")
+    log_llm_start(session_id, len(ocr_text), s2_params["model"])
+
+    heartbeat_task = asyncio.create_task(
+        _heartbeat_loop(ui_queues, session_id,
+                       interval=s2_params.get("heartbeat_interval_s", 5.0))
+    )
+    t0 = time.time()
+    try:
+        s2_data = await _stage2_call(s1_data,
+                                      exam_type=exam_type,
+                                      variant=variant,
+                                      session_id=session_id,
+                                      cancel_evt=cancel_evt)
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+
+    log_llm_result(session_id,
+                   duration_ms=(time.time() - t0) * 1000,
+                   output_length=len(json.dumps(s2_data)),
+                   question_marker_count=len(s2_data.get("questions", [])),
+                   success=True)
+
+    # ── 4. Soft validation ──
+    warnings = []
+    if len(s2_data["questions"]) != q_count:
+        warnings.append(
+            f"题数不一致：Stage 1 识别 {q_count} 题，"
+            f"Stage 2 生成 {len(s2_data['questions'])} 题"
+        )
+    sem_warnings = _validate_semantic(s1_data, s2_data)
+    warnings.extend(sem_warnings)
+
+    # ── 5. Store + Vocabulary + SSE ──
+    exam_id = store.save(
+        session_id=session_id,
+        user_id=user_id,
+        exam_type=exam_type,
+        variant=variant,
+        passage=s1_data.get("passage", ""),
+        s1_questions=json.dumps(s1_data.get("questions", []), ensure_ascii=False),
+        question_count=q_count,
+        ocr_text=ocr_text,
+        tutorial=json.dumps(s2_data["questions"], ensure_ascii=False),
+        warnings=warnings,
+    )
+
+    vocab_text = s1_data.get("passage", "") + " "
+    for q in s1_data.get("questions", []):
+        vocab_text += (q.get("stem", "") or q.get("sentence_with_blank", "") or q.get("statement", "")) + " "
+        for opt_text in q.get("options", {}).values():
+            vocab_text += opt_text + " "
+    vocab_insight = process_vocabulary(vocab_text, exam_id, store, user_id=user_id)
+
+    await _broadcast(ui_queues, session_id, "stage2", "done", {
+        "questions": s2_data["questions"],
+        "exam_id": exam_id,
+        "exam_type": exam_type,
+        "variant": variant,
+        "passage": s1_data.get("passage", ""),
+        "s1_questions": s1_data.get("questions", []),
+        "warnings": warnings,
+        "vocabulary": vocab_insight,
+    })

@@ -1,12 +1,13 @@
 import { useApp } from '../store'
 
-const VERSION = 'v5.4'
+const VERSION = 'v6.1'
 
 export function TopBar() {
-  const { screen, goHome, goHistory, typeLabel, variantLabel, examData } = useApp()
+  const { screen, goHome, goHistory, goProfile, typeLabel, variantLabel, examData, currentUser, goLogin } = useApp()
   const isHome = screen === 'home'
   const isHistory = screen === 'history'
   const isReview = screen === 'review'
+  const isProfile = screen === 'profile'
   const qCount = examData?.questions?.length || 0
 
   return (
@@ -32,18 +33,33 @@ export function TopBar() {
       {!isHome && (
         <span className="text-[0.95rem] font-semibold text-white tracking-tight truncate mx-2">
           {isHistory && '📚 历史记录'}
+          {isProfile && '👤 个人资料'}
         </span>
       )}
 
       {/* Right */}
       <div className="flex items-center gap-2 shrink-0">
         {isHome && (
-          <button
-            className="text-sm text-exam-text-muted hover:text-exam-text transition-colors px-1.5 py-1"
-            onClick={goHistory}
-            title="历史记录"
-          >
-            📚
+          <>
+            <button
+              className="text-sm text-exam-text-muted hover:text-exam-text transition-colors px-1.5 py-1"
+              onClick={goHistory} title="历史记录"
+            >📚</button>
+            <button
+              onClick={goProfile}
+              className="flex items-center gap-1 text-xs text-exam-text-muted hover:text-exam-text transition-colors px-1.5 py-1"
+              title="个人资料"
+            >
+              <span className="w-5 h-5 rounded-full bg-exam-accent/20 flex items-center justify-center text-[0.6rem] text-exam-accent font-bold">
+                {(currentUser?.name || '?')[0]}
+              </span>
+            </button>
+          </>
+        )}
+        {isProfile && (
+          <button onClick={goLogin}
+            className="text-xs text-exam-text-muted hover:text-exam-error transition-colors px-2 py-1">
+            退出
           </button>
         )}
         {isReview && (

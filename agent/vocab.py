@@ -12,32 +12,50 @@ from pathlib import Path
 
 # ── Stopwords — common function words not worth tracking ──
 _STOPWORDS = {
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-    "should", "may", "might", "must", "can", "could", "i", "you", "he",
-    "she", "it", "we", "they", "me", "him", "her", "us", "them", "my",
-    "your", "his", "its", "our", "their", "mine", "yours", "hers", "ours",
-    "theirs", "this", "that", "these", "those", "to", "of", "in", "for",
-    "on", "with", "at", "by", "from", "as", "into", "about", "like",
+    # Articles
+    "the", "a", "an",
+    # Be / Have / Do
+    "am", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did",
+    # Modals
+    "will", "would", "shall", "should", "may", "might", "must", "can", "could",
+    # Pronouns
+    "i", "you", "he", "she", "it", "we", "they",
+    "me", "him", "her", "us", "them",
+    "my", "your", "his", "its", "our", "their",
+    "mine", "yours", "hers", "ours", "theirs",
+    "myself", "yourself", "himself", "herself", "itself",
+    "ourselves", "yourselves", "themselves",
+    # Demonstratives / Interrogatives
+    "this", "that", "these", "those",
+    "what", "which", "who", "whom", "whose",
+    # Prepositions
+    "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
+    "into", "onto", "about", "like", "up", "down", "out", "off",
+    "over", "under", "between", "through", "during", "before", "after",
+    "above", "below", "against", "within", "without", "toward", "towards", "upon",
+    # Conjunctions
     "and", "but", "or", "so", "if", "because", "when", "where", "how",
-    "what", "which", "who", "not", "no", "than", "then", "also", "very",
-    "just", "now", "here", "there", "up", "down", "out", "off", "over",
-    "under", "again", "more", "some", "any", "each", "every", "all",
-    "both", "few", "many", "much", "such", "only", "other", "one", "two",
-    "three", "first", "last", "new", "old", "good", "bad", "big", "small",
-    "high", "low", "long", "short", "great", "little", "own", "same",
-    "right", "left", "still", "back", "go", "get", "make", "know", "take",
-    "see", "come", "think", "look", "want", "give", "use", "find", "tell",
-    "ask", "work", "seem", "feel", "try", "leave", "call", "keep", "let",
-    "begin", "show", "hear", "play", "run", "move", "live", "believe",
-    "hold", "bring", "happen", "write", "sit", "stand", "lose", "pay",
-    "meet", "set", "learn", "change", "lead", "understand", "watch",
-    "follow", "stop", "create", "speak", "read", "spend", "grow", "open",
-    "walk", "win", "teach", "offer", "remember", "consider", "appear",
-    "buy", "wait", "serve", "die", "send", "build", "stay", "fall",
-    "cut", "reach", "kill", "raise", "pass", "sell", "decide", "return",
-    "explain", "hope", "develop", "carry", "break", "receive", "agree",
-    "support", "hit", "produce", "eat", "cover", "catch", "draw", "choose",
+    "although", "though", "while", "since", "until", "unless", "whether",
+    "nor", "yet", "both", "either", "neither",
+    # Negation
+    "not", "no", "never", "none",
+    # Quantifiers / Determiners
+    "some", "any", "each", "every", "all", "few", "many", "much", "such",
+    "more", "most", "less", "least", "several",
+    "no", "none", "another", "other", "own", "same",
+    # Cardinal numbers
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "hundred", "thousand", "million",
+    # Ordinals
+    "first", "last", "next",
+    # Time/Place function adverbs
+    "now", "then", "here", "there", "today", "tomorrow", "yesterday",
+    "once", "twice", "again", "ever", "already", "still", "always",
+    "often", "sometimes", "usually", "never", "also", "even", "only", "just",
+    "very", "too", "quite", "rather", "really", "enough", "almost",
+    "else", "however", "therefore", "thus", "furthermore", "please", "well",
+    "than",
 }
 
 # ── Common irregular forms for junior-high English ──
@@ -437,6 +455,7 @@ def process_vocabulary(
     text: str,
     exam_id: str,
     store,
+    user_id: str = "",
 ) -> dict:
     """Full vocabulary pipeline: extract → normalize → record → classify → return.
 
@@ -453,10 +472,10 @@ def process_vocabulary(
     for word in words:
         cur = curriculum.get(word)
         if cur:
-            store.vocab_record(word, cur[0], cur[1], exam_id)
+            store.vocab_record(word, cur[0], cur[1], exam_id, user_id=user_id)
         else:
             # Look up existing data from history
-            history_snapshot = store.vocab_lookup([word])
+            history_snapshot = store.vocab_lookup([word], user_id=user_id)
             hist = history_snapshot.get(word, {})
             store.vocab_record(word, hist.get("pos", ""),
                               hist.get("chinese", ""), exam_id)

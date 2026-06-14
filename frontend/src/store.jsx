@@ -11,23 +11,39 @@ const TTS_AUTO_MAP = {
   true_false: ['解析','考点','原句/题干','原文依据']
 }
 
-// processing is NOT a navigable route — it's a transient state
-const HASH_SCREEN = { '': 'home', '#home': 'home', '#history': 'history', '#review': 'review' }
-const SCREEN_HASH = { home: '#home', history: '#history', review: '#review' }
+const HASH_SCREEN = { '': 'home', '#home': 'home', '#history': 'history', '#review': 'review', '#profile': 'profile' }
+const SCREEN_HASH = { home: '#home', history: '#history', review: '#review', profile: '#profile' }
 
 function getScreenFromHash() {
   return HASH_SCREEN[window.location.hash] || 'home'
 }
 
 export function AppProvider({ children }) {
-  const [screen, setScreen] = useState(getScreenFromHash)
+  const [screen, setScreen] = useState('login')  // start at login
   const [pendingFiles, setPendingFiles] = useState(null)
   const [examData, setExamData] = useState(null)
   const [history, setHistory] = useState([])
   const [historyVersion, setHistoryVersion] = useState(0)
   const [config, setConfig] = useState({ apiBase:'', pageSize:20, allowedTypes:[] })
 
-  // Load server config on mount
+  // Auth state
+  const [authToken, setAuthToken] = useState(null)
+  const [currentUser, setCurrentUser] = useState(null)
+
+  const setAuth = useCallback((token, user) => {
+    setAuthToken(token)
+    setCurrentUser(user)
+    setScreen('home')
+  }, [])
+
+  const clearAuth = useCallback(() => {
+    localStorage.removeItem('exam_tutor_token')
+    setAuthToken(null)
+    setCurrentUser(null)
+    setScreen('login')
+  }, [])
+
+  // Load config on mount
   useEffect(() => {
     fetch('/api/config')
       .then(r => r.json())
@@ -39,6 +55,27 @@ export function AppProvider({ children }) {
       .catch(() => {})
   }, [])
 
+  // Restore auth from localStorage
+  useEffect(() => {
+    const token = localStorage.getItem('exam_tutor_token')
+    if (!token) { setScreen('login'); return }
+    fetch(config.apiBase + '/auth/me', {
+      headers: { 'Authorization': 'Bearer ' + token },
+    }).then(r => r.ok ? r.json() : null)
+      .then(user => {
+        if (user) {
+          setAuthToken(token)
+          setCurrentUser(user)
+          setScreen('home')
+        } else {
+          localStorage.removeItem('exam_tutor_token')
+          setScreen('login')
+        }
+      })
+      .catch(() => setScreen('login'))
+  }, [config.apiBase])
+
+  // Hash routing
   useEffect(() => {
     const onHash = () => {
       const s = getScreenFromHash()
@@ -49,35 +86,26 @@ export function AppProvider({ children }) {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  // Refresh safety: restore review data from sessionStorage
+  // Review state restore
   useEffect(() => {
     if (screen === 'review' && !examData) {
       try {
         const stored = sessionStorage.getItem('exam_review')
-        if (stored) {
-          setExamData(JSON.parse(stored))
-        } else {
-          window.location.hash = '#home'
-        }
+        if (stored) setExamData(JSON.parse(stored))
+        else window.location.hash = '#home'
       } catch { window.location.hash = '#home' }
     }
   }, [screen, examData])
 
   const navigate = useCallback((s) => {
-    setScreen(s)
-    const h = SCREEN_HASH[s]
-    if (h && window.location.hash !== h) {
-      window.location.hash = h
-    }
+    setScreen(s); const h = SCREEN_HASH[s]
+    if (h && window.location.hash !== h) window.location.hash = h
   }, [])
-
-  // Internal screen switch — no hash change (for transient states)
   const switchScreen = useCallback((s) => { setScreen(s) }, [])
 
   const examType = examData?.exam_type || ''
   const variant = examData?.variant || ''
   const questions = examData?.questions || []
-
   const ttsAutoSeq = TTS_AUTO_MAP[examType] || []
   const typeLabel = TYPE_LABEL[examType] || examType
   const variantLabel = variant && variant !== 'multiple_choice' ? VARIANT_LABEL[variant] || variant : ''
@@ -93,29 +121,28 @@ export function AppProvider({ children }) {
     navigate('review')
   }, [navigate, refreshHistory])
   const goHistory = useCallback(() => { navigate('history') }, [navigate])
+  const goProfile = useCallback(() => { navigate('profile') }, [navigate])
+  const goLogin = useCallback(() => { clearAuth() }, [clearAuth])
 
   const loadReviewFromHistory = useCallback(async (id, apiBase) => {
-    switchScreen('processing')
-    setPendingFiles([])
+    switchScreen('processing'); setPendingFiles([])
     try {
-      const r = await fetch(apiBase + '/review/' + id)
+      const r = await fetch(apiBase + '/review/' + id, {
+        headers: { 'Authorization': 'Bearer ' + authToken },
+      })
       const data = await r.json()
-      if (data.questions && data.questions.length > 0) {
-        goReview(data)
-      } else {
-        navigate('history')
-      }
+      if (data.questions?.length) goReview(data)
+      else navigate('history')
     } catch { navigate('history') }
-  }, [goReview, navigate, switchScreen])
+  }, [goReview, navigate, switchScreen, authToken])
 
   return (
     <AppContext.Provider value={{
-      screen, setScreen, goHome, goProcessing, goReview, goHistory, loadReviewFromHistory,
-      pendingFiles,
+      screen, setScreen, goHome, goProcessing, goReview, goHistory, goProfile, goLogin,
+      pendingFiles, authToken, currentUser, setCurrentUser, setAuth, clearAuth,
       examData, setExamData, examType, variant, questions,
       history, setHistory, historyVersion, refreshHistory,
-      config, setConfig,
-      ttsAutoSeq, typeLabel, variantLabel,
+      config, setConfig, ttsAutoSeq, typeLabel, variantLabel,
       TYPE_LABEL, VARIANT_LABEL,
     }}>
       {children}

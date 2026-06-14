@@ -6,7 +6,7 @@ const JPEG_QUALITY = 0.8
 const MAX_RAW_SIZE = 50 * 1024 * 1024
 
 export function HomeScreen() {
-  const { goProcessing, config, history, setHistory, loadReviewFromHistory, TYPE_LABEL, VARIANT_LABEL, historyVersion } = useApp()
+  const { goProcessing, config, history, setHistory, loadReviewFromHistory, TYPE_LABEL, VARIANT_LABEL, historyVersion, authToken } = useApp()
   const [dragOver, setDragOver] = useState(false)
   const [histLoading, setHistLoading] = useState(false)
   const camRef = useRef(null)
@@ -44,7 +44,9 @@ export function HomeScreen() {
   // Load history — re-fetches on historyVersion bump (new exam processed)
   useEffect(() => {
     setHistLoading(true)
-    fetch(config.apiBase + '/exams?page=1')
+    fetch(config.apiBase + '/exams?page=1', {
+      headers: authToken ? { 'Authorization': 'Bearer ' + authToken } : {},
+    })
       .then(r => r.json())
       .then(({ items }) => { if (items?.length) setHistory(items) })
       .catch(() => {})
@@ -54,7 +56,7 @@ export function HomeScreen() {
   const toggleStar = async (examId, e) => {
     e.stopPropagation()
     try {
-      const r = await fetch(config.apiBase + '/exams/' + examId + '/star', { method: 'POST' })
+      const r = await fetch(config.apiBase + '/exams/' + examId + '/star', { method: 'POST', headers: authToken ? { 'Authorization': 'Bearer ' + authToken } : {} })
       const d = await r.json()
       setHistory(prev => prev.map(item =>
         item.id === examId ? { ...item, starred: d.starred ? 1 : 0 } : item

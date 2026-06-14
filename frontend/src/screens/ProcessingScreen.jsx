@@ -5,14 +5,13 @@ import { useSSE } from '../hooks/useSSE'
 const STEPS = ['上传', '识别', '解析', '精讲']
 
 export function ProcessingScreen({ files: initialFiles }) {
-  const { goHome, goReview, config } = useApp()
+  const { goHome, goReview, config, authToken } = useApp()
   const sse = useSSE()
   const timeoutRef = useRef(null)
 
-  // Start when files arrive
   useEffect(() => {
     if (initialFiles?.length) {
-      sse.start(initialFiles, config.apiBase)
+      sse.start(initialFiles, config.apiBase, authToken)
     }
   }, [])
 
