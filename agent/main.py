@@ -293,11 +293,6 @@ async def batch_delete_exams(request: Request, user: Student = Depends(current_u
 
 @app.get("/sse/ui")
 async def sse_ui(session: str = Query(...)):
-    from engine import _strict_mode as engine_strict_mode
-    if session not in ui_queues and session not in engine_strict_mode:
-        await asyncio.sleep(0)
-        if session not in ui_queues:
-            return JSONResponse({"error": "session not found"}, 404)
     q = asyncio.Queue()
     ui_queues.setdefault(session, []).append(q)
 
@@ -328,8 +323,6 @@ async def sse_ui(session: str = Query(...)):
             if not queues:
                 ui_queues.pop(session, None)
                 cancel_session(session)
-                from engine import _strict_mode
-                _strict_mode.pop(session, None)
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
