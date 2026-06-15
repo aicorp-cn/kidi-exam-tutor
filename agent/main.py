@@ -115,18 +115,24 @@ async def auth(request: Request, body: dict):
         if existing.name != name:
             raise HTTPException(401, "姓名不匹配")
 
-        # Same device — allow passwordless
-        if not existing.hashed_password:
+        # Try device match — if known device, allow passwordless even with password set
+        dt, is_known = await _match_device(existing.student_id)
+        if is_known:
             token = await get_jwt_strategy().write_token(existing)
-            dt, is_known = await _match_device(existing.student_id)
-            return _auth_response(existing, token, device_token=dt, known_device=is_known)
+            return _auth_response(existing, token, device_token=dt, known_device=True)
 
-        # Has password — verify
-        if bcrypt.checkpw(password.encode(), existing.hashed_password.encode()):
-            token = await get_jwt_strategy().write_token(existing)
-            dt, is_known = await _match_device(existing.student_id)
-            return _auth_response(existing, token, device_token=dt, known_device=is_known)
-        raise HTTPException(401, "密码错误")
+        # Unknown device: password required
+        if existing.hashed_password:
+            if not password:
+                raise HTTPException(401, "新设备需要输入密码")
+            if bcrypt.checkpw(password.encode(), existing.hashed_password.encode()):
+                token = await get_jwt_strategy().write_token(existing)
+                return _auth_response(existing, token, device_token=dt, known_device=False)
+            raise HTTPException(401, "密码错误")
+
+        # No password set — allow any device (first-time setup)
+        token = await get_jwt_strategy().write_token(existing)
+        return _auth_response(existing, token, device_token=dt, known_device=is_known)
 
     # ── New user path ──
     province = body.get("province", "")
@@ -336,7 +342,13 @@ async def get_exam(exam_id: str, user: Student = Depends(current_user)):
 
 @app.get("/review/{exam_id}")
 async def get_review(exam_id: str, user: Student = Depends(current_user)):
+    import sys
+    print(f"[REVIEW] exam_id={exam_id} user={user.student_id} id={str(user.id)[:16]}", file=sys.stderr, flush=True)
     data = store.get_review(exam_id, user_id=str(user.id))
+    if data:
+        print(f"[REVIEW] OK questions={len(data.get('questions',[]))}", file=sys.stderr, flush=True)
+    else:
+        print(f"[REVIEW] NOT FOUND", file=sys.stderr, flush=True)
     return data if data else JSONResponse({"error": "not found"}, 404)
 
 

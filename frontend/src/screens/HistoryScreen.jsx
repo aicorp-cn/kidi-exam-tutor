@@ -51,11 +51,13 @@ export function HistoryScreen() {
     setLoading(false)
   }, [config, authToken])
 
+  // Gate fetch on authToken — avoids 401 on mount before auth restore
   useEffect(() => {
+    if (!authToken) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => { setItems([]); setPage(1); setDone(false); fetchPage(1, true, search, typeFilter) }, search ? 300 : 0)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [search, typeFilter])
+  }, [search, typeFilter, authToken])
 
   const loadMore = () => { if (!done && !loading) fetchPage(page, false, search, typeFilter) }
 

@@ -1,8 +1,9 @@
 """GeoIP — resolve IP to province/city code.
 
-Priority: GeoLite2-City.mmdb > ipapi.co (client IP) >
-         server self-locate (private IP only) > empty.
+Priority: GeoLite2-City.mmdb > ip-api.com (free, HTTP) >
+         ipapi.co > server self-locate (private IP only) > empty.
 """
+
 import asyncio
 import time
 import httpx
@@ -17,6 +18,22 @@ PROVINCE_MAP: dict[str, str] = {
     "GS": "GS", "QH": "QH", "YN": "YN", "GZ": "GZ", "HI": "HI",
     "TW": "TW", "HK": "HK", "MO": "MO", "NM": "NM", "NX": "NX",
     "XJ": "XJ", "XZ": "XZ", "GX": "GX",
+}
+
+# ── English region name → province code (ip-api.com returns English names) ──
+REGION_EN_TO_CODE: dict[str, str] = {
+    "Beijing": "BJ", "Shanghai": "SH", "Tianjin": "TJ", "Chongqing": "CQ",
+    "Guangdong": "GD", "Zhejiang": "ZJ", "Jiangsu": "JS",
+    "Sichuan": "SC", "Hubei": "HB", "Hunan": "HN",
+    "Shandong": "SD", "Fujian": "FJ", "Anhui": "AH",
+    "Jiangxi": "JX", "Henan": "HA",
+    "Hebei": "HE", "Shanxi": "SX", "Shaanxi": "SN",
+    "Gansu": "GS", "Qinghai": "QH",
+    "Yunnan": "YN", "Guizhou": "GZ", "Hainan": "HI",
+    "Liaoning": "LN", "Jilin": "JL", "Heilongjiang": "HL",
+    "Guangxi": "GX", "Inner Mongolia": "NM", "Ningxia": "NX",
+    "Xinjiang": "XJ", "Tibet": "XZ",
+    "Taiwan": "TW", "Hong Kong": "HK", "Macau": "MO",
 }
 
 # ── City code map (full Chinese name → abbreviation) ──
@@ -77,7 +94,11 @@ async def lookup(ip: str) -> tuple[str, str]:
     if ip in _cache and _cache[ip][1] > now:
         return _cache[ip][0]
 
-    result = await _from_geolite2(ip) or await _from_ipapi(ip)
+    result = (
+        await _from_geolite2(ip)
+        or await _from_ipapicom(ip)
+        or await _from_ipapi(ip)
+    )
     if (not result or not result[0]) and _is_private(ip):
         result = await _server_self_locate() or ("", "")
     if not result:
@@ -106,14 +127,43 @@ async def _from_geolite2(ip: str) -> tuple[str, str] | None:
         return None
 
 
+async def _from_ipapicom(ip: str) -> tuple[str, str] | None:
+    """Try ip-api.com free HTTP API. 45 req/min, no key.
+    
+    Returns English region/city names — translated to Chinese via lookup tables.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                f"http://ip-api.com/json/{ip}",
+                params={"fields": "status,countryCode,regionName,city"},
+                timeout=5,
+            )
+            if r.status_code != 200:
+                return None
+            data = r.json()
+        if data.get("status") != "success":
+            return None
+        if data.get("countryCode") != "CN":
+            return None  # non-China IP — can't map province
+        province = REGION_EN_TO_CODE.get(data.get("regionName", ""), "")
+        city = _translate_city(data.get("city", ""))
+        return (province, city) if province else None
+    except Exception:
+        return None
+
+
 async def _from_ipapi(ip: str) -> tuple[str, str] | None:
     """Try ipapi.co free API. 1000 req/day, no key."""
     try:
         async with httpx.AsyncClient() as client:
-            r = await client.get(f"https://ipapi.co/{ip}/json/", timeout=3)
+            r = await client.get(f"https://ipapi.co/{ip}/json/", timeout=5)
             if r.status_code != 200:
                 return None
             data = r.json()
+        # ipapi.co returns error messages in HTML/text when rate-limited
+        if "error" in data or not isinstance(data, dict):
+            return None
         province = PROVINCE_MAP.get(data.get("region_code", "").upper(), "")
         city = _translate_city(data.get("city", ""))
         return (province, city) if province else None
@@ -121,7 +171,7 @@ async def _from_ipapi(ip: str) -> tuple[str, str] | None:
         return None
 
 
-# ── City name translation (ipapi.co returns English) ──
+# ── City name translation (both ip-api.com and ipapi.co return English) ──
 _CITY_EN2CN: dict[str, str] = {
     "Beijing": "北京", "Shanghai": "上海", "Tianjin": "天津", "Chongqing": "重庆",
     "Guangzhou": "广州", "Shenzhen": "深圳", "Dongguan": "东莞", "Foshan": "佛山",
@@ -164,7 +214,7 @@ _CITY_EN2CN: dict[str, str] = {
     "Tangshan": "唐山", "Handan": "邯郸", "Baoding": "保定",
     "Xining": "西宁", "Yinchuan": "银川",
     "Lianyungang": "连云港", "Zhenjiang": "镇江", "Taizhou": "台州",
-    "Shaoxing": "绍兴", "Zhoushan": "舟山", "Lishui": "丽水",
+    "Zhoushan": "舟山", "Lishui": "丽水",
     "Quzhou": "衢州",
 }
 
@@ -172,6 +222,8 @@ _CITY_EN2CN: dict[str, str] = {
 def _translate_city(raw: str) -> str:
     """Translate ipapi.co English city name to Chinese; pass through if unknown."""
     return _CITY_EN2CN.get(raw, raw)
+
+
 import ipaddress
 
 _PRIVATE_NETS = [
@@ -193,23 +245,55 @@ def _is_private(ip: str) -> bool:
 
 
 async def _server_self_locate() -> tuple[str, str] | None:
-    """Geolocate the server's own public IP via ipapi.co. Cached forever."""
+    """Geolocate the server's own public IP via ip-api.com. Cached forever."""
     global _SERVER_LOCATION
     if _SERVER_LOCATION is not None:
         return _SERVER_LOCATION
-    # ipapi.co with no IP → uses caller's public address
+    # Try ip-api.com first (free), then ipapi.co
+    for fetcher in (_from_ipapicom_self, _from_ipapi_self):
+        result = await fetcher()
+        if result and result[0]:
+            _SERVER_LOCATION = result
+            return _SERVER_LOCATION
+    _SERVER_LOCATION = ("", "")  # mark as failed — don't retry
+    return None
+
+
+async def _from_ipapicom_self() -> tuple[str, str] | None:
+    """Self-locate via ip-api.com (call with no IP → uses caller's address)."""
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                "http://ip-api.com/json/",
+                params={"fields": "status,countryCode,regionName,city"},
+                timeout=5,
+            )
+            if r.status_code != 200:
+                return None
+            data = r.json()
+        if data.get("status") != "success":
+            return None
+        if data.get("countryCode") != "CN":
+            return None
+        province = REGION_EN_TO_CODE.get(data.get("regionName", ""), "")
+        city = _translate_city(data.get("city", ""))
+        return (province, city) if province else None
+    except Exception:
+        return None
+
+
+async def _from_ipapi_self() -> tuple[str, str] | None:
+    """Self-locate via ipapi.co."""
     try:
         async with httpx.AsyncClient() as client:
             r = await client.get("https://ipapi.co/json/", timeout=5)
             if r.status_code != 200:
                 return None
             data = r.json()
+        if "error" in data or not isinstance(data, dict):
+            return None
         province = PROVINCE_MAP.get(data.get("region_code", "").upper(), "")
         city = _translate_city(data.get("city", ""))
-        if province:
-            _SERVER_LOCATION = (province, city)
-            return _SERVER_LOCATION
+        return (province, city) if province else None
     except Exception:
-        pass
-    _SERVER_LOCATION = ("", "")  # mark as failed — don't retry
-    return None
+        return None

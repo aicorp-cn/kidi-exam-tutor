@@ -1,5 +1,5 @@
 // Service Worker — PWA 离线支持
-const CACHE = 'exam-tutor-v6';
+const CACHE = 'exam-tutor-v8';
 const SHELL = ['/', '/index.html', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', e => {

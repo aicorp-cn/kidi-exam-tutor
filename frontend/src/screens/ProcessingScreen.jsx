@@ -18,10 +18,16 @@ export function ProcessingScreen({ files: initialFiles }) {
     }
   }, [])
 
-  // Safety: if no files and no SSE activity after 800ms, dead-end redirect
+  // Safety: redirect if truly dead-end (null/undefined files, not empty array)
+  // Empty array = loading from history — parent navigates when fetch completes.
+  // Set a 10s safety timeout as fallback.
   useEffect(() => {
-    if (initialFiles === null || initialFiles === undefined) {
+    const isDeadEnd = initialFiles === null || initialFiles === undefined
+    const isEmptyLoad = Array.isArray(initialFiles) && initialFiles.length === 0
+    if (isDeadEnd) {
       timeoutRef.current = setTimeout(() => goHome(), 800)
+    } else if (isEmptyLoad) {
+      timeoutRef.current = setTimeout(() => goHome(), 10000)
     }
     return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }
   }, [])
@@ -64,9 +70,11 @@ export function ProcessingScreen({ files: initialFiles }) {
     }
   }, [sse.result, sse.stage, goReview])
 
+  const isEmptyLoad = Array.isArray(initialFiles) && initialFiles.length === 0
   const stepIdx = sse.stage === 'uploading' ? 0 : sse.stage === 'ocr' ? 1 : sse.stage === 'stage1' ? 2 : sse.stage === 'stage2' ? 3 : sse.stage === 'done' ? 4 : 0
   const pct = sse.stage === 'done' ? 100 : stepIdx === 3 ? 75 : stepIdx * 25 + 10
   const hasError = sse.stage === 'error' || stalled
+  const isLoading = isEmptyLoad && !sse.result && !hasError
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center px-6 gap-6">
@@ -109,9 +117,9 @@ export function ProcessingScreen({ files: initialFiles }) {
         </div>
       ) : (
         <>
-          <div className="text-base text-white font-semibold tracking-tight">{sse.statusText || '正在准备…'}</div>
-          <div className="text-sm text-exam-text-muted">{sse.detail}</div>
-          <div className="text-xs text-exam-text-muted opacity-40">通常在 15-30 秒内完成</div>
+          <div className="text-base text-white font-semibold tracking-tight">{isLoading ? '加载中…' : (sse.statusText || '正在准备…')}</div>
+          <div className="text-sm text-exam-text-muted">{isLoading ? '' : sse.detail}</div>
+          <div className="text-xs text-exam-text-muted opacity-40">{isLoading ? '正在获取试卷详情' : '通常在 15-30 秒内完成'}</div>
           {['uploading','ocr','stage1','stage2'].includes(sse.stage) && (
             <button onClick={sse.cancel} className="mt-2 text-xs text-exam-text-muted border border-exam-border px-6 py-1.5 rounded-full hover:text-exam-error hover:text-exam-error hover:border-exam-error transition-colors">
               取消

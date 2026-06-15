@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { persistDeviceToken, getPersistedDeviceToken, getDeviceTokenFromIDB } from './device'
 
 const AppContext = createContext(null)
@@ -14,6 +14,10 @@ const TTS_AUTO_MAP = {
 
 const HASH_SCREEN = { '': 'home', '#home': 'home', '#history': 'history', '#review': 'review', '#profile': 'profile' }
 const SCREEN_HASH = { home: '#home', history: '#history', review: '#review', profile: '#profile' }
+// Screens that require authentication
+const PROTECTED = new Set(['home', 'history', 'review', 'profile'])
+// Screens that are transient and should not appear in hash
+const TRANSIENT = new Set(['processing', 'login'])
 
 function getScreenFromHash() {
   return HASH_SCREEN[window.location.hash] || 'home'
@@ -27,7 +31,8 @@ function loadStoredUser() {
 }
 
 export function AppProvider({ children }) {
-  const [screen, setScreen] = useState('login')
+  // ── State ──
+  const [screen, setScreen] = useState(() => getScreenFromHash())
   const [pendingFiles, setPendingFiles] = useState(null)
   const [examData, setExamData] = useState(null)
   const [history, setHistory] = useState([])
@@ -39,15 +44,22 @@ export function AppProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [logoutMessage, setLogoutMessage] = useState('')
   const [storedUser, setStoredUser] = useState(loadStoredUser)
+  // Prevent auth guard from firing before auth restore completes on mount
+  const [authReady, setAuthReady] = useState(false)
+
+  // Auth guard: when authToken becomes null, force redirect to login
+  const authRef = useRef(authToken)
+  authRef.current = authToken
+
+  // ── Auth helpers ──
 
   const setAuth = useCallback((token, user) => {
     setAuthToken(token)
     setCurrentUser(user)
-    // Persist user identity so next visit shows "Welcome back"
     const u = { student_id: user.student_id, name: user.name, has_password: !!user.has_password }
     localStorage.setItem('exam_tutor_user', JSON.stringify(u))
+    localStorage.setItem('exam_tutor_token', token)
     setStoredUser(u)
-    // Layer 1: 写入 device_token 到三层冗余存储
     if (user.device_token) {
       persistDeviceToken(user.device_token)
     }
@@ -58,9 +70,12 @@ export function AppProvider({ children }) {
     localStorage.removeItem('exam_tutor_token')
     setAuthToken(null)
     setCurrentUser(null)
-    // Keep exam_tutor_user — same-device returning users get "Welcome back"
     setLogoutMessage('已安全退出')
     setScreen('login')
+    // Clear hash so back button doesn't return to protected page
+    if (window.location.hash) {
+      window.location.hash = ''
+    }
   }, [])
 
   const forgetUser = useCallback(() => {
@@ -72,7 +87,9 @@ export function AppProvider({ children }) {
     setLogoutMessage('')
   }, [])
 
-  // Load config on mount
+  // ── Init effects ──
+
+  // Config + device self-heal (fire-and-forget, no screen dependency)
   useEffect(() => {
     fetch('/api/config')
       .then(r => r.json())
@@ -82,19 +99,15 @@ export function AppProvider({ children }) {
         allowedTypes: cfg.allowed_types || [],
       }))
       .catch(() => {})
-  }, [])
-
-  // Layer 1 self-heal: Cookie → localStorage → IndexedDB on startup
-  useEffect(() => {
     getPersistedDeviceToken()
     getDeviceTokenFromIDB()
   }, [])
 
-  // Restore auth from localStorage
+  // Auth restore — respects initial hash
   useEffect(() => {
     const token = localStorage.getItem('exam_tutor_token')
     if (!token) {
-      // No token — show login. storedUser may exist (for "Welcome back")
+      setAuthReady(true)
       setScreen('login')
       return
     }
@@ -105,42 +118,52 @@ export function AppProvider({ children }) {
         if (user) {
           setAuthToken(token)
           setCurrentUser(user)
-          setScreen('home')
+          // Navigate to the hash target, not unconditionally 'home'
+          const hashTarget = getScreenFromHash()
+          const resolved = TRANSIENT.has(hashTarget) ? 'home' : hashTarget
+          setScreen(resolved)
         } else {
           localStorage.removeItem('exam_tutor_token')
           setScreen('login')
         }
       })
       .catch(() => setScreen('login'))
+      .finally(() => setAuthReady(true))
   }, [config.apiBase])
 
-  // Hash routing
+  // Hash → Screen sync (bi-directional)
   useEffect(() => {
     const onHash = () => {
       const s = getScreenFromHash()
-      if (s === 'processing') return
+      // Don't override transient screens via hash
+      if (TRANSIENT.has(s)) return
       setScreen(s)
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  // Review state restore
+  // Review restore: MUST wait for authReady before deciding.
+  // Otherwise auth restore races and overwrites the hash, losing user intent.
   useEffect(() => {
-    if (screen === 'review' && !examData) {
-      try {
-        const stored = sessionStorage.getItem('exam_review')
-        if (stored) setExamData(JSON.parse(stored))
-        else window.location.hash = '#home'
-      } catch { window.location.hash = '#home' }
+    if (!authReady) return
+    if (screen !== 'review') return
+    if (examData) return  // Already loaded
+    try {
+      const stored = sessionStorage.getItem('exam_review')
+      if (stored) {
+        setExamData(JSON.parse(stored))
+      } else {
+        // No review data — likely direct URL / tab reopen.
+        // Redirect to history (natural fallback), not home.
+        navigateInternal('history')
+      }
+    } catch {
+      navigateInternal('history')
     }
-  }, [screen, examData])
+  }, [screen, examData, authReady])
 
-  const navigate = useCallback((s) => {
-    setScreen(s); const h = SCREEN_HASH[s]
-    if (h && window.location.hash !== h) window.location.hash = h
-  }, [])
-  const switchScreen = useCallback((s) => { setScreen(s) }, [])
+  // ── Derived ──
 
   const examType = examData?.exam_type || ''
   const variant = examData?.variant || ''
@@ -149,9 +172,38 @@ export function AppProvider({ children }) {
   const typeLabel = TYPE_LABEL[examType] || examType
   const variantLabel = variant && variant !== 'multiple_choice' ? VARIANT_LABEL[variant] || variant : ''
 
+  // ── Navigation — single source of truth ──
+
+  const navigateInternal = useCallback((s) => {
+    setScreen(s)
+    const h = SCREEN_HASH[s]
+    if (h && window.location.hash !== h) {
+      window.location.hash = h
+    }
+  }, [])
+
+  // Public navigate: enforces auth guard for protected pages
+  const navigate = useCallback((s) => {
+    if (PROTECTED.has(s) && !authRef.current) {
+      setScreen('login')
+      if (window.location.hash) window.location.hash = ''
+      return
+    }
+    navigateInternal(s)
+  }, [navigateInternal])
+
+  // switchScreen for transient screens (processing, login without logout)
+  // Bypasses hash sync AND auth guard — caller must ensure valid context
+  const switchScreen = useCallback((s) => {
+    setScreen(s)
+  }, [])
+
+  // ── Screen transitions ──
+
   const goHome = useCallback(() => { navigate('home'); setPendingFiles(null) }, [navigate])
   const goProcessing = useCallback((files) => { setPendingFiles(files); switchScreen('processing') }, [switchScreen])
   const refreshHistory = useCallback(() => setHistoryVersion(v => v + 1), [])
+
   const goReview = useCallback((data) => {
     setExamData(data)
     try { sessionStorage.setItem('exam_review', JSON.stringify(data)) } catch {}
@@ -159,29 +211,41 @@ export function AppProvider({ children }) {
     refreshHistory()
     navigate('review')
   }, [navigate, refreshHistory])
+
   const goHistory = useCallback(() => { navigate('history') }, [navigate])
   const goProfile = useCallback(() => { navigate('profile') }, [navigate])
   const goLogin = useCallback(() => { clearAuth() }, [clearAuth])
 
   const loadReviewFromHistory = useCallback(async (id, apiBase) => {
-    switchScreen('processing'); setPendingFiles([])
     try {
       const r = await fetch(apiBase + '/review/' + id, {
-        headers: { 'Authorization': 'Bearer ' + authToken },
+        headers: { 'Authorization': 'Bearer ' + authRef.current },
       })
       const data = await r.json()
       if (data.questions?.length) { goReview(data); return }
-      // Record exists but has no review data — go back to home
       goHome()
     } catch {
-      // Network/auth error — go back to home, record is still there
       goHome()
     }
-  }, [goReview, goHome, switchScreen, authToken])
+  }, [goReview, goHome])
+
+  // ── Auth guard (App-level) ──
+
+  // If on a protected screen without auth, redirect to login.
+  // This catches: expired tokens, browser-back after logout, hash manipulation.
+  // Must NOT fire before auth restore completes (authReady gate).
+  useEffect(() => {
+    if (!authReady) return
+    if (PROTECTED.has(screen) && !authToken) {
+      setScreen('login')
+      if (window.location.hash) window.location.hash = ''
+    }
+  }, [screen, authToken, authReady])
 
   return (
     <AppContext.Provider value={{
       screen, setScreen, goHome, goProcessing, goReview, goHistory, goProfile, goLogin,
+      loadReviewFromHistory,
       pendingFiles, authToken, currentUser, setCurrentUser, setAuth, clearAuth,
       logoutMessage, setLogoutMessage, storedUser, setStoredUser, forgetUser,
       examData, setExamData, examType, variant, questions,
