@@ -22,6 +22,7 @@ from user import (
 )
 from geoip import lookup as geoip_lookup, city_abbr
 from pinyin import surname_initial
+from device_profile import DeviceProfileDB
 
 
 class CORSStaticFiles(StaticFiles):
@@ -53,6 +54,7 @@ _pipeline_semaphore = asyncio.Semaphore(2)
 # ── User system ──
 
 _student_db = init_student_db(str(config.data_dir / "users.db"))
+_device_profile_db = DeviceProfileDB(str(config.data_dir / "users.db"))
 _fastapi_users = create_fastapi_users(get_user_manager, [auth_backend])
 current_user = _fastapi_users.current_user(active=True)
 
@@ -67,13 +69,17 @@ app.include_router(
 
 # ── Custom /auth endpoint — student-friendly register/login ──
 
-def _auth_response(user, token):
-    """Standard auth response with has_password flag."""
-    return {
+def _auth_response(user, token, device_token=None, known_device=False):
+    """Standard auth response with has_password flag + optional device info."""
+    resp = {
         "access_token": token, "token_type": "bearer",
         "student_id": user.student_id, "name": user.name,
         "has_password": bool(user.hashed_password),
     }
+    if device_token:
+        resp["device_token"] = device_token
+        resp["known_device"] = known_device
+    return resp
 
 @app.post("/auth", tags=["auth"])
 async def auth(request: Request, body: dict):
@@ -84,6 +90,20 @@ async def auth(request: Request, body: dict):
     """
     import bcrypt
     known_device = body.get("known_device", False)
+
+    async def _match_device(student_id: str) -> tuple[str | None, bool]:
+        """Match/create device profile from fingerprint. Returns (device_token, is_known)."""
+        fp = body.get("fingerprint", {})
+        device_hash = fp.get("device_hash", "")
+        if not device_hash:
+            return None, False
+        return _device_profile_db.match_or_create(
+            student_id=student_id,
+            device_hash=device_hash,
+            fingerprint=fp,
+            user_agent=request.headers.get("user-agent", ""),
+            ip_address=request.client.host if request.client else "",
+        )
 
     # ── Returning user path ──
     direct_student_id = body.get("student_id", "").strip()
@@ -99,12 +119,14 @@ async def auth(request: Request, body: dict):
         # Same device — allow passwordless
         if not existing.hashed_password:
             token = await get_jwt_strategy().write_token(existing)
-            return _auth_response(existing, token)
+            dt, is_known = await _match_device(existing.student_id)
+            return _auth_response(existing, token, device_token=dt, known_device=is_known)
 
         # Has password — verify
         if bcrypt.checkpw(password.encode(), existing.hashed_password.encode()):
             token = await get_jwt_strategy().write_token(existing)
-            return _auth_response(existing, token)
+            dt, is_known = await _match_device(existing.student_id)
+            return _auth_response(existing, token, device_token=dt, known_device=is_known)
         raise HTTPException(401, "密码错误")
 
     # ── New user path ──
@@ -131,7 +153,8 @@ async def auth(request: Request, body: dict):
         if existing.hashed_password:
             if bcrypt.checkpw(password.encode(), existing.hashed_password.encode()):
                 token = await get_jwt_strategy().write_token(existing)
-                return _auth_response(existing, token)
+                dt, is_known = await _match_device(existing.student_id)
+                return _auth_response(existing, token, device_token=dt, known_device=is_known)
             raise HTTPException(401, "密码错误")
 
         # No password — enforce on new device
@@ -146,11 +169,13 @@ async def auth(request: Request, body: dict):
             hp = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
             updated = await _student_db.update(existing, {"hashed_password": hp})
             token = await get_jwt_strategy().write_token(updated)
-            return _auth_response(updated, token)
+            dt, is_known = await _match_device(updated.student_id)
+            return _auth_response(updated, token, device_token=dt, known_device=is_known)
 
         # Same device, no password — allow
         token = await get_jwt_strategy().write_token(existing)
-        return _auth_response(existing, token)
+        dt, is_known = await _match_device(existing.student_id)
+        return _auth_response(existing, token, device_token=dt, known_device=is_known)
 
     # New user
     hp = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() if password else ""
@@ -161,7 +186,8 @@ async def auth(request: Request, body: dict):
         "student_id": student_id, "name": name,
     })
     token = await get_jwt_strategy().write_token(new_user)
-    return _auth_response(new_user, token)
+    dt, is_known = await _match_device(new_user.student_id)
+    return _auth_response(new_user, token, device_token=dt, known_device=is_known)
 
 # ── /api/location — IP → province/city ──
 

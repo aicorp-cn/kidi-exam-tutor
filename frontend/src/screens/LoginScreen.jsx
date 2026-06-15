@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApp } from '../store'
+import { generateFingerprint } from '../fingerprint'
 
 const PROVINCES = [
   '', '北京', '上海', '天津', '重庆',
@@ -121,6 +122,7 @@ export function LoginScreen() {
     }
     setLoading(true); setError('')
     try {
+      const fingerprint = await generateFingerprint()
       const r = await fetch(config.apiBase + '/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -129,6 +131,7 @@ export function LoginScreen() {
           name: storedUser.name,
           password,
           known_device: true,
+          fingerprint,
         }),
       })
       const data = await r.json()
@@ -154,6 +157,7 @@ export function LoginScreen() {
     }
     setLoading(true); setError('')
     try {
+      const fingerprint = await generateFingerprint()
       const r = await fetch(config.apiBase + '/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -161,6 +165,7 @@ export function LoginScreen() {
           province: PROV_CODE[province] || '',
           city, gender, input_id: inputId, name, password,
           known_device: !!storedUser,
+          fingerprint,
         }),
       })
       const data = await r.json()
