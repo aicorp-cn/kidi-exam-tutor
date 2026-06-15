@@ -8,7 +8,7 @@ const MAX_RAW_SIZE = 50 * 1024 * 1024
 export function HomeScreen() {
   const { goProcessing, config, history, setHistory, loadReviewFromHistory, TYPE_LABEL, VARIANT_LABEL, historyVersion, authToken } = useApp()
   const [dragOver, setDragOver] = useState(false)
-  const [histLoading, setHistLoading] = useState(false)
+  const [histLoading, setHistLoading] = useState(true)
   const camRef = useRef(null)
   const fileRef = useRef(null)
 
@@ -131,6 +131,9 @@ export function HomeScreen() {
             <div className="text-3xl mb-3 opacity-40">📚</div>
             <p className="text-sm text-exam-text-muted">还没有批改记录<br />上传第一张试卷开始吧</p>
           </div>
+        )}
+        {histLoading && (
+          <div className="text-center py-4 text-exam-text-muted text-sm">加载中…</div>
         )}
         {history.map(item => (
           <div key={item.id} className="bg-exam-surface rounded-lg p-3.5 mb-2 cursor-pointer border border-transparent active:border-exam-accent active:bg-exam-surface-hover transition-all"

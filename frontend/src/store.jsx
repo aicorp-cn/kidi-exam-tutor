@@ -252,6 +252,7 @@ export function AppProvider({ children }) {
       history, setHistory, historyVersion, refreshHistory,
       config, setConfig, ttsAutoSeq, typeLabel, variantLabel,
       TYPE_LABEL, VARIANT_LABEL,
+      authReady, PROTECTED,
     }}>
       {children}
     </AppContext.Provider>

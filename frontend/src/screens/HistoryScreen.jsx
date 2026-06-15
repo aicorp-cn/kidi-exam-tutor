@@ -7,7 +7,7 @@ export function HistoryScreen() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [done, setDone] = useState(false)
   const [typeCounts, setTypeCounts] = useState({})
   const [totalCount, setTotalCount] = useState(null)
