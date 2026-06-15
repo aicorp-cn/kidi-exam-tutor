@@ -8,7 +8,7 @@ export async function persistDeviceToken(token) {
   try {
     await new Promise((resolve, reject) => {
       const req = indexedDB.open('exam_tutor', 1)
-      req.onupgradeneeded = () => req.result.createObjectStore('device')
+      req.onupgradeneeded = () => req.result.createObjectStore('device', { keyPath: 'id' })
       req.onsuccess = () => {
         const tx = req.result.transaction('device', 'readwrite')
         const putReq = tx.objectStore('device').put({ id: 'current', token })
@@ -43,7 +43,7 @@ export async function getDeviceTokenFromIDB() {
   try {
     return await new Promise((resolve) => {
       const req = indexedDB.open('exam_tutor', 1)
-      req.onupgradeneeded = () => req.result.createObjectStore('device')
+      req.onupgradeneeded = () => req.result.createObjectStore('device', { keyPath: 'id' })
       req.onsuccess = () => {
         const tx = req.result.transaction('device', 'readonly')
         const get = tx.objectStore('device').get('current')
