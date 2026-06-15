@@ -41,17 +41,19 @@ export function HomeScreen() {
     if (processed.length) goProcessing(processed)
   }, [goProcessing])
 
-  // Load history — re-fetches on historyVersion bump (new exam processed)
+  // Load history — re-fetches on historyVersion bump (new exam processed).
+  // Gate on authToken: avoid 401 on mount before auth restore completes.
   useEffect(() => {
+    if (!authToken) return
     setHistLoading(true)
     fetch(config.apiBase + '/exams?page=1', {
-      headers: authToken ? { 'Authorization': 'Bearer ' + authToken } : {},
+      headers: { 'Authorization': 'Bearer ' + authToken },
     })
       .then(r => r.json())
       .then(({ items }) => { if (items?.length) setHistory(items) })
       .catch(() => {})
       .finally(() => setHistLoading(false))
-  }, [historyVersion])
+  }, [historyVersion, authToken])
 
   const toggleStar = async (examId, e) => {
     e.stopPropagation()

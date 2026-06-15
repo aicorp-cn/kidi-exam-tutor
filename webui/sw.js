@@ -1,9 +1,12 @@
 // Service Worker — PWA 离线支持
-const CACHE = 'exam-tutor-v8';
-const SHELL = ['/', '/index.html', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
+// CACHE 版本由 prebuild 脚本自动注入 git short hash
+const CACHE = 'exam-tutor-71a732e';
+// 静态资源白名单 — 绝不缓存 API 响应
+const STATIC_PREFIXES = ['/assets/', '/icons/'];
+const STATIC_EXACT = ['/', '/index.html', '/manifest.json', '/sw.js', '/favicon.svg'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(STATIC_EXACT)));
   self.skipWaiting();
 });
 
@@ -15,10 +18,12 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // API 请求走网络
-  if (e.request.url.includes('/exams') || e.request.url.includes('/sse')) {
-    return;
-  }
+  const path = new URL(e.request.url).pathname;
+  // 白名单：只缓存静态资源
+  const isStatic = STATIC_EXACT.includes(path) ||
+    STATIC_PREFIXES.some(p => path.startsWith(p));
+  if (!isStatic) return; // API / 动态请求直通网络
+
   e.respondWith(
     caches.match(e.request).then(cached =>
       cached || fetch(e.request).then(resp => {

@@ -8,13 +8,18 @@
 // P2: fuzzy matching (added server-side later)
 
 async function sha256(data) {
-  const buf = typeof data === 'string'
-    ? new TextEncoder().encode(data)
-    : data
-  const hash = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
+  try {
+    const buf = typeof data === 'string'
+      ? new TextEncoder().encode(data)
+      : data
+    const hash = await crypto.subtle.digest('SHA-256', buf)
+    return Array.from(new Uint8Array(hash))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+  } catch {
+    // crypto.subtle unavailable (non-HTTPS, insecure context)
+    return 'crypto_unavailable'
+  }
 }
 
 /**

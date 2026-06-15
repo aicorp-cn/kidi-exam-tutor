@@ -243,7 +243,7 @@ class DeviceProfileDB:
                     now, now,
                 ),
             )
-            return device_token, True
+            return device_token, False
 
 
     @staticmethod
