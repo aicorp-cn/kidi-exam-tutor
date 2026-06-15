@@ -3,6 +3,13 @@ import { useApp } from '../store'
 import { generateFingerprint } from '../fingerprint'
 import { getPersistedDeviceToken } from '../device'
 
+function makeUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+}
+
 const PROVINCES = [
   '', '北京', '上海', '天津', '重庆',
   '广东', '浙江', '江苏', '四川', '湖北', '湖南',
@@ -144,7 +151,7 @@ export function LoginScreen() {
         return
       }
       localStorage.setItem('exam_tutor_token', data.access_token)
-      if (!data.device_token) data.device_token = crypto.randomUUID()
+      if (!data.device_token) data.device_token = makeUUID()
       setAuth(data.access_token, data)
       goHome()
     } catch { setError('网络错误，请重试') }
@@ -181,7 +188,7 @@ export function LoginScreen() {
       }
       forgetUser()  // clear old storedUser before writing new one
       localStorage.setItem('exam_tutor_token', data.access_token)
-      if (!data.device_token) data.device_token = crypto.randomUUID()
+      if (!data.device_token) data.device_token = makeUUID()
       setAuth(data.access_token, data)
       goHome()
     } catch { setError('网络错误，请重试') }

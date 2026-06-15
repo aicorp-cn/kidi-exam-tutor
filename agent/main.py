@@ -75,10 +75,9 @@ def _auth_response(user, token, device_token=None, known_device=False):
         "access_token": token, "token_type": "bearer",
         "student_id": user.student_id, "name": user.name,
         "has_password": bool(user.hashed_password),
+        "device_token": device_token,
+        "known_device": known_device,
     }
-    if device_token:
-        resp["device_token"] = device_token
-        resp["known_device"] = known_device
     return resp
 
 @app.post("/auth", tags=["auth"])
