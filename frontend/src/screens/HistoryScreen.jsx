@@ -1,17 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useApp } from '../store'
+import { KEYS, sessionGet, sessionSet } from '../storage'
 
 // ── search/typeFilter 持久化（sessionStorage: 刷新保留，关 tab 清空）──
 
 function loadHistoryState() {
-  try {
-    const raw = sessionStorage.getItem('history_state')
-    return raw ? JSON.parse(raw) : { search: '', typeFilter: '' }
-  } catch { return { search: '', typeFilter: '' } }
+  const saved = sessionGet(KEYS.HISTORY_STATE)
+  return saved || { search: '', typeFilter: '' }
 }
 
 function saveHistoryState(search, typeFilter) {
-  try { sessionStorage.setItem('history_state', JSON.stringify({ search, typeFilter })) } catch {}
+  sessionSet(KEYS.HISTORY_STATE, { search, typeFilter })
 }
 
 export function HistoryScreen() {

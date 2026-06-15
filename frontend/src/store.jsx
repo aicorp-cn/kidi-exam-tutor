@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { persistDeviceToken, getPersistedDeviceToken, getDeviceTokenFromIDB } from './device'
+import { KEYS, sessionGet, sessionSet } from './storage'
 
 const AppContext = createContext(null)
 
@@ -150,9 +151,9 @@ export function AppProvider({ children }) {
     if (screen !== 'review') return
     if (examData) return  // Already loaded
     try {
-      const stored = sessionStorage.getItem('exam_review')
+      const stored = sessionGet(KEYS.REVIEW)
       if (stored) {
-        setExamData(JSON.parse(stored))
+        setExamData(stored)
       } else {
         // No review data — likely direct URL / tab reopen.
         // Redirect to history (natural fallback), not home.
@@ -206,7 +207,7 @@ export function AppProvider({ children }) {
 
   const goReview = useCallback((data) => {
     setExamData(data)
-    try { sessionStorage.setItem('exam_review', JSON.stringify(data)) } catch {}
+    sessionSet(KEYS.REVIEW, data)
     setPendingFiles(null)
     refreshHistory()
     navigate('review')

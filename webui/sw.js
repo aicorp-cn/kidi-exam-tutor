@@ -1,6 +1,6 @@
 // Service Worker — PWA 离线支持
 // CACHE 版本由 postbuild 脚本自动注入 git short hash
-const CACHE = 'exam-tutor-e32f1c8';
+const CACHE = 'exam-tutor-b960f50';
 // 静态资源白名单 — 绝不缓存 API 响应
 const STATIC_PREFIXES = ['/assets/', '/icons/'];
 const STATIC_EXACT = ['/', '/index.html', '/manifest.json', '/sw.js', '/favicon.svg'];
