@@ -1,11 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useApp } from '../store'
 
+// ── search/typeFilter 持久化（sessionStorage: 刷新保留，关 tab 清空）──
+
+function loadHistoryState() {
+  try {
+    const raw = sessionStorage.getItem('history_state')
+    return raw ? JSON.parse(raw) : { search: '', typeFilter: '' }
+  } catch { return { search: '', typeFilter: '' } }
+}
+
+function saveHistoryState(search, typeFilter) {
+  try { sessionStorage.setItem('history_state', JSON.stringify({ search, typeFilter })) } catch {}
+}
+
 export function HistoryScreen() {
   const { config, loadReviewFromHistory, TYPE_LABEL, VARIANT_LABEL, authToken } = useApp()
+  const saved = loadHistoryState()
   const [items, setItems] = useState([])
-  const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState('')
+  const [search, setSearch] = useState(saved.search)
+  const [typeFilter, setTypeFilter] = useState(saved.typeFilter)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [done, setDone] = useState(false)
@@ -58,6 +72,11 @@ export function HistoryScreen() {
     debounceRef.current = setTimeout(() => { setItems([]); setPage(1); setDone(false); fetchPage(1, true, search, typeFilter) }, search ? 300 : 0)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [search, typeFilter, authToken])
+
+  // Persist search/filter so they survive page refresh
+  useEffect(() => {
+    saveHistoryState(search, typeFilter)
+  }, [search, typeFilter])
 
   const loadMore = () => { if (!done && !loading) fetchPage(page, false, search, typeFilter) }
 
