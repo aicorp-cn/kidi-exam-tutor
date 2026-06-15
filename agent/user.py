@@ -1,6 +1,6 @@
 """Student identity system built on fastapi-users.
 
-Student ID encoding: {province}-{city}-{gender}-{name_init}-{input_id}
+Student ID encoding: {province_code}-{city_abbr}-{gender}{name_init}-{input_id}
 Email: {student_id}@aikidi.com (auto-generated, student never sees)
 """
 import uuid

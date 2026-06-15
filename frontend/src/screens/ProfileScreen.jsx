@@ -13,6 +13,7 @@ export function ProfileScreen() {
   const [showPassword, setShowPassword] = useState(false)
   const [currentPw, setCurrentPw] = useState('')
   const [newPw, setNewPw] = useState('')
+  const [logoutConfirm, setLogoutConfirm] = useState(false)
 
   const studentId = currentUser?.student_id || ''
 
@@ -134,10 +135,22 @@ export function ProfileScreen() {
       {success && <div className="text-sm text-exam-success text-center mb-3">{success}</div>}
 
       {/* Logout */}
-      <button onClick={goLogin}
-        className="w-full mt-4 py-3 rounded-xl text-sm text-exam-error border border-exam-error/30 font-medium active:bg-exam-error/5">
-        退出登录
-      </button>
+      {logoutConfirm ? (
+        <div className="bg-exam-surface rounded-xl border border-exam-border p-4 mt-4">
+          <p className="text-sm text-exam-text-muted text-center mb-3">退出后需重新登录。确定退出？</p>
+          <div className="flex gap-3">
+            <button onClick={() => setLogoutConfirm(false)}
+              className="flex-1 py-2.5 rounded-lg text-sm text-exam-text-muted border border-exam-border">取消</button>
+            <button onClick={goLogin}
+              className="flex-1 py-2.5 rounded-lg text-sm text-white bg-exam-error font-medium">确认退出</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setLogoutConfirm(true)}
+          className="w-full mt-4 py-3 rounded-xl text-sm text-exam-error border border-exam-error/30 font-medium active:bg-exam-error/5">
+          退出登录
+        </button>
+      )}
     </div>
   )
 }

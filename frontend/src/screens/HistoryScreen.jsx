@@ -105,7 +105,7 @@ export function HistoryScreen() {
         </div>
         <button onClick={() => { setManageMode(!manageMode); setSelected(new Set()); setDeleteConfirm(false) }}
           className={`shrink-0 text-xs px-3 py-2 rounded-lg font-medium transition-colors ${manageMode ? 'bg-exam-accent/15 text-exam-accent' : 'bg-exam-surface border border-exam-border text-exam-text-muted hover:text-exam-text'}`}>
-          {manageMode ? '完成' : '管理'}</button>
+          {manageMode ? '完成' : '批量删除'}</button>
       </div>
       <div className="flex gap-2 mt-0 px-4 pb-2 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
         {typeTabs.map(t => (

@@ -20,7 +20,7 @@ from user import (
     init_student_db, get_user_manager, get_user_db,
     create_fastapi_users, auth_backend, get_jwt_strategy,
 )
-from geoip import lookup as geoip_lookup
+from geoip import lookup as geoip_lookup, city_abbr
 from pinyin import surname_initial
 
 
@@ -67,10 +67,47 @@ app.include_router(
 
 # ── Custom /auth endpoint — student-friendly register/login ──
 
+def _auth_response(user, token):
+    """Standard auth response with has_password flag."""
+    return {
+        "access_token": token, "token_type": "bearer",
+        "student_id": user.student_id, "name": user.name,
+        "has_password": bool(user.hashed_password),
+    }
+
 @app.post("/auth", tags=["auth"])
 async def auth(request: Request, body: dict):
-    """Register or login. Body: {province, city, gender, input_id, name, password?}"""
+    """Register or login.
+
+    Returning user:  {student_id, name, password?, known_device: true}
+    New user:         {province, city, gender, input_id, name, password?, known_device: false}
+    """
     import bcrypt
+    known_device = body.get("known_device", False)
+
+    # ── Returning user path ──
+    direct_student_id = body.get("student_id", "").strip()
+    if direct_student_id:
+        name = body.get("name", "").strip()
+        password = body.get("password", "")
+        existing = await _student_db.get_by_student_id(direct_student_id)
+        if not existing:
+            raise HTTPException(401, "用户不存在，请重新注册")
+        if existing.name != name:
+            raise HTTPException(401, "姓名不匹配")
+
+        # Same device — allow passwordless
+        if not existing.hashed_password:
+            token = await get_jwt_strategy().write_token(existing)
+            return _auth_response(existing, token)
+
+        # Has password — verify
+        if bcrypt.checkpw(password.encode(), existing.hashed_password.encode()):
+            token = await get_jwt_strategy().write_token(existing)
+            return _auth_response(existing, token)
+        raise HTTPException(401, "密码错误")
+
+    # ── New user path ──
     province = body.get("province", "")
     city = body.get("city", "")
     gender = body.get("gender", "保密")
@@ -84,19 +121,36 @@ async def auth(request: Request, body: dict):
     name_init = surname_initial(name)
     gender_code = {"男": "M", "女": "F"}.get(gender, "X")
 
-    student_id = f"{province}-{city}-{gender_code}-{name_init}-{input_id}"
+    student_id = f"{province}-{city_abbr(city)}-{gender_code}{name_init}-{input_id}"
     email = f"{student_id}@aikidi.com"
 
     # Try existing user
     existing = await _student_db.get_by_email(email)
     if existing:
-        if not existing.hashed_password or bcrypt.checkpw(
-            password.encode(), existing.hashed_password.encode()
-        ):
-            token = await get_jwt_strategy().write_token(existing)
-            return {"access_token": token, "token_type": "bearer",
-                    "student_id": existing.student_id, "name": existing.name}
-        raise HTTPException(401, "密码错误")
+        # Has password — verify it
+        if existing.hashed_password:
+            if bcrypt.checkpw(password.encode(), existing.hashed_password.encode()):
+                token = await get_jwt_strategy().write_token(existing)
+                return _auth_response(existing, token)
+            raise HTTPException(401, "密码错误")
+
+        # No password — enforce on new device
+        if not known_device:
+            if not password or len(password) < 6:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "请设置密码（至少6位），用于换设备登录验证",
+                             "require_password": True},
+                )
+            # Set password for existing user
+            hp = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+            updated = await _student_db.update(existing, {"hashed_password": hp})
+            token = await get_jwt_strategy().write_token(updated)
+            return _auth_response(updated, token)
+
+        # Same device, no password — allow
+        token = await get_jwt_strategy().write_token(existing)
+        return _auth_response(existing, token)
 
     # New user
     hp = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() if password else ""
@@ -107,8 +161,7 @@ async def auth(request: Request, body: dict):
         "student_id": student_id, "name": name,
     })
     token = await get_jwt_strategy().write_token(new_user)
-    return {"access_token": token, "token_type": "bearer",
-            "student_id": student_id, "name": name}
+    return _auth_response(new_user, token)
 
 # ── /api/location — IP → province/city ──
 

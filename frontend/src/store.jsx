@@ -18,8 +18,15 @@ function getScreenFromHash() {
   return HASH_SCREEN[window.location.hash] || 'home'
 }
 
+function loadStoredUser() {
+  try {
+    const raw = localStorage.getItem('exam_tutor_user')
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
 export function AppProvider({ children }) {
-  const [screen, setScreen] = useState('login')  // start at login
+  const [screen, setScreen] = useState('login')
   const [pendingFiles, setPendingFiles] = useState(null)
   const [examData, setExamData] = useState(null)
   const [history, setHistory] = useState([])
@@ -29,10 +36,16 @@ export function AppProvider({ children }) {
   // Auth state
   const [authToken, setAuthToken] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
+  const [logoutMessage, setLogoutMessage] = useState('')
+  const [storedUser, setStoredUser] = useState(loadStoredUser)
 
   const setAuth = useCallback((token, user) => {
     setAuthToken(token)
     setCurrentUser(user)
+    // Persist user identity so next visit shows "Welcome back"
+    const u = { student_id: user.student_id, name: user.name, has_password: !!user.has_password }
+    localStorage.setItem('exam_tutor_user', JSON.stringify(u))
+    setStoredUser(u)
     setScreen('home')
   }, [])
 
@@ -40,7 +53,18 @@ export function AppProvider({ children }) {
     localStorage.removeItem('exam_tutor_token')
     setAuthToken(null)
     setCurrentUser(null)
+    // Keep exam_tutor_user — same-device returning users get "Welcome back"
+    setLogoutMessage('已安全退出')
     setScreen('login')
+  }, [])
+
+  const forgetUser = useCallback(() => {
+    localStorage.removeItem('exam_tutor_user')
+    localStorage.removeItem('exam_tutor_token')
+    setStoredUser(null)
+    setAuthToken(null)
+    setCurrentUser(null)
+    setLogoutMessage('')
   }, [])
 
   // Load config on mount
@@ -58,7 +82,11 @@ export function AppProvider({ children }) {
   // Restore auth from localStorage
   useEffect(() => {
     const token = localStorage.getItem('exam_tutor_token')
-    if (!token) { setScreen('login'); return }
+    if (!token) {
+      // No token — show login. storedUser may exist (for "Welcome back")
+      setScreen('login')
+      return
+    }
     fetch(config.apiBase + '/auth/me', {
       headers: { 'Authorization': 'Bearer ' + token },
     }).then(r => r.ok ? r.json() : null)
@@ -131,15 +159,20 @@ export function AppProvider({ children }) {
         headers: { 'Authorization': 'Bearer ' + authToken },
       })
       const data = await r.json()
-      if (data.questions?.length) goReview(data)
-      else navigate('history')
-    } catch { navigate('history') }
-  }, [goReview, navigate, switchScreen, authToken])
+      if (data.questions?.length) { goReview(data); return }
+      // Record exists but has no review data — go back to home
+      goHome()
+    } catch {
+      // Network/auth error — go back to home, record is still there
+      goHome()
+    }
+  }, [goReview, goHome, switchScreen, authToken])
 
   return (
     <AppContext.Provider value={{
       screen, setScreen, goHome, goProcessing, goReview, goHistory, goProfile, goLogin,
       pendingFiles, authToken, currentUser, setCurrentUser, setAuth, clearAuth,
+      logoutMessage, setLogoutMessage, storedUser, setStoredUser, forgetUser,
       examData, setExamData, examType, variant, questions,
       history, setHistory, historyVersion, refreshHistory,
       config, setConfig, ttsAutoSeq, typeLabel, variantLabel,

@@ -56,12 +56,6 @@ export function TopBar() {
             </button>
           </>
         )}
-        {isProfile && (
-          <button onClick={goLogin}
-            className="text-xs text-exam-text-muted hover:text-exam-error transition-colors px-2 py-1">
-            退出
-          </button>
-        )}
         {isReview && (
           <span className="text-xs text-exam-accent bg-exam-accent/8 px-3 py-1 rounded-full font-medium">
             {typeLabel}{variantLabel ? ' · ' + variantLabel : ''}{qCount ? ` · ${qCount}题` : ''}

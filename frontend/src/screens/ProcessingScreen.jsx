@@ -1,13 +1,16 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../store'
 import { useSSE } from '../hooks/useSSE'
 
 const STEPS = ['上传', '识别', '解析', '精讲']
+const STALL_TIMEOUT_MS = 90_000  // 90s no progress → timeout
 
 export function ProcessingScreen({ files: initialFiles }) {
   const { goHome, goReview, config, authToken } = useApp()
   const sse = useSSE()
   const timeoutRef = useRef(null)
+  const stallRef = useRef(null)
+  const [stalled, setStalled] = useState(false)
 
   useEffect(() => {
     if (initialFiles?.length) {
@@ -22,6 +25,20 @@ export function ProcessingScreen({ files: initialFiles }) {
     }
     return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }
   }, [])
+
+  // Stall detection: reset on stage change, timeout if stuck
+  useEffect(() => {
+    if (sse.stage === 'done' || sse.stage === 'error' || sse.stage === 'cancelled') {
+      if (stallRef.current) clearTimeout(stallRef.current)
+      return
+    }
+    if (stallRef.current) clearTimeout(stallRef.current)
+    stallRef.current = setTimeout(() => {
+      sse.cancel()
+      setStalled(true)
+    }, STALL_TIMEOUT_MS)
+    return () => { if (stallRef.current) clearTimeout(stallRef.current) }
+  }, [sse.stage])
 
   // Navigate home when user cancels
   useEffect(() => {
@@ -49,7 +66,7 @@ export function ProcessingScreen({ files: initialFiles }) {
 
   const stepIdx = sse.stage === 'uploading' ? 0 : sse.stage === 'ocr' ? 1 : sse.stage === 'stage1' ? 2 : sse.stage === 'stage2' ? 3 : sse.stage === 'done' ? 4 : 0
   const pct = sse.stage === 'done' ? 100 : stepIdx === 3 ? 75 : stepIdx * 25 + 10
-  const hasError = sse.stage === 'error'
+  const hasError = sse.stage === 'error' || stalled
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center px-6 gap-6">
@@ -80,13 +97,15 @@ export function ProcessingScreen({ files: initialFiles }) {
       {/* Status */}
       {hasError ? (
         <div>
-          <div className="text-lg text-exam-error font-semibold mb-2">❌ 出错了</div>
-          <div className="text-sm text-exam-text-muted mb-5">{sse.error?.message}</div>
-          {sse.error?.recoverable && (
-            <button onClick={goHome} className="bg-exam-accent text-white px-7 py-2.5 rounded-full text-sm font-semibold active:scale-95 transition-transform">
-              返回重试
-            </button>
-          )}
+          <div className="text-lg text-exam-error font-semibold mb-2">
+            {stalled ? '⏱️ 处理超时' : '❌ 出错了'}
+          </div>
+          <div className="text-sm text-exam-text-muted mb-5">
+            {stalled ? '服务器响应超时，试卷可能已处理完成。请返回首页查看。' : sse.error?.message}
+          </div>
+          <button onClick={goHome} className="bg-exam-accent text-white px-7 py-2.5 rounded-full text-sm font-semibold active:scale-95 transition-transform">
+            返回首页
+          </button>
         </div>
       ) : (
         <>
@@ -94,7 +113,7 @@ export function ProcessingScreen({ files: initialFiles }) {
           <div className="text-sm text-exam-text-muted">{sse.detail}</div>
           <div className="text-xs text-exam-text-muted opacity-40">通常在 15-30 秒内完成</div>
           {['uploading','ocr','stage1','stage2'].includes(sse.stage) && (
-            <button onClick={sse.cancel} className="mt-2 text-xs text-exam-text-muted border border-exam-border px-6 py-1.5 rounded-full hover:text-exam-error hover:border-exam-error transition-colors">
+            <button onClick={sse.cancel} className="mt-2 text-xs text-exam-text-muted border border-exam-border px-6 py-1.5 rounded-full hover:text-exam-error hover:text-exam-error hover:border-exam-error transition-colors">
               取消
             </button>
           )}

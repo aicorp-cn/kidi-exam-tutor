@@ -52,20 +52,38 @@ const CITY_MAP = {
 }
 
 export function LoginScreen() {
-  const { config, setAuth, goHome } = useApp()
+  const { config, setAuth, goHome, logoutMessage, setLogoutMessage, storedUser, forgetUser } = useApp()
+
+  // ── Returning user mode ──
+  const isReturning = !!storedUser
+
+  // ── New user form state ──
   const [province, setProvince] = useState('')
   const [city, setCity] = useState('')
   const [cities, setCities] = useState([])
   const [gender, setGender] = useState('保密')
   const [inputId, setInputId] = useState('')
   const [name, setName] = useState('')
+  const [editingLocation, setEditingLocation] = useState(false)
+
+  // ── Common state ──
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(true)
+  const [mustSetPassword, setMustSetPassword] = useState(false)
 
-  // Auto-detect location on mount
+  // Clear logout message after display
   useEffect(() => {
+    if (logoutMessage) {
+      const t = setTimeout(() => setLogoutMessage(''), 3000)
+      return () => clearTimeout(t)
+    }
+  }, [logoutMessage])
+
+  // Auto-detect location on mount (new users only)
+  useEffect(() => {
+    if (isReturning) { setChecking(false); return }
     fetch(config.apiBase + '/api/location')
       .then(r => r.json())
       .then(data => {
@@ -77,27 +95,12 @@ export function LoginScreen() {
             setCity(data.city)
           }
         }
+        if (pv && data.city && CITY_MAP[pv]?.includes(data.city)) {
+          setEditingLocation(false)
+        }
       })
       .catch(() => {})
       .finally(() => setChecking(false))
-  }, [])
-
-  // Check existing token
-  useEffect(() => {
-    const token = localStorage.getItem('exam_tutor_token')
-    if (!token) { setChecking(false); return }
-    fetch(config.apiBase + '/auth/me', {
-      headers: { 'Authorization': 'Bearer ' + token },
-    }).then(r => {
-      if (r.ok) return r.json()
-      throw new Error('expired')
-    }).then(user => {
-      setAuth(token, user)
-      goHome()
-    }).catch(() => {
-      localStorage.removeItem('exam_tutor_token')
-      setChecking(false)
-    })
   }, [])
 
   const handleProvince = (pv) => {
@@ -106,10 +109,43 @@ export function LoginScreen() {
     setCities(CITY_MAP[pv] || [])
   }
 
-  const handleSubmit = async (e) => {
+  // ── Submit: returning user ──
+  const submitReturning = async (e) => {
     e.preventDefault()
-    if (!inputId || !name) {
-      setError('学号和姓名不能为空'); return
+    if (mustSetPassword && (!password || password.length < 6)) {
+      setError('请设置密码（至少6位），用于换设备登录验证'); return
+    }
+    setLoading(true); setError('')
+    try {
+      const r = await fetch(config.apiBase + '/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: storedUser.student_id,
+          name: storedUser.name,
+          password,
+          known_device: true,
+        }),
+      })
+      const data = await r.json()
+      if (!r.ok) {
+        if (data.require_password) { setMustSetPassword(true); setError(data.detail); return }
+        setError(data.detail || '登录失败')
+        return
+      }
+      localStorage.setItem('exam_tutor_token', data.access_token)
+      setAuth(data.access_token, data)
+      goHome()
+    } catch { setError('网络错误，请重试') }
+    finally { setLoading(false) }
+  }
+
+  // ── Submit: new user ──
+  const submitNew = async (e) => {
+    e.preventDefault()
+    if (!inputId || !name) { setError('学号和姓名不能为空'); return }
+    if (mustSetPassword && (!password || password.length < 6)) {
+      setError('请设置密码（至少6位），用于换设备登录验证'); return
     }
     setLoading(true); setError('')
     try {
@@ -119,21 +155,20 @@ export function LoginScreen() {
         body: JSON.stringify({
           province: PROV_CODE[province] || '',
           city, gender, input_id: inputId, name, password,
+          known_device: false,
         }),
       })
       const data = await r.json()
       if (!r.ok) {
+        if (data.require_password) { setMustSetPassword(true); setError(data.detail); return }
         setError(data.detail || '登录失败')
         return
       }
       localStorage.setItem('exam_tutor_token', data.access_token)
       setAuth(data.access_token, data)
       goHome()
-    } catch {
-      setError('网络错误，请重试')
-    } finally {
-      setLoading(false)
-    }
+    } catch { setError('网络错误，请重试') }
+    finally { setLoading(false) }
   }
 
   if (checking) {
@@ -144,6 +179,71 @@ export function LoginScreen() {
     )
   }
 
+  // ══════════════════════════════════════════
+  // RETURNING USER VIEW
+  // ══════════════════════════════════════════
+  if (isReturning) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pb-20">
+        <div className="w-full max-w-sm">
+          <h1 className="text-2xl font-bold text-center text-exam-text mb-1">
+            欢迎回来
+          </h1>
+          <p className="text-center text-exam-text-muted text-sm mb-6">
+            {storedUser.name}
+          </p>
+
+          {logoutMessage && (
+            <div className="mb-4 p-3 bg-exam-accent/10 border border-exam-accent/20 rounded-lg text-center">
+              <p className="text-sm text-exam-accent">{logoutMessage}</p>
+            </div>
+          )}
+
+          <form onSubmit={submitReturning} className="space-y-4">
+            {/* Student ID — read-only */}
+            <div className="bg-exam-surface border border-exam-border rounded-lg px-3.5 py-2.5">
+              <p className="text-xs text-exam-text-muted mb-0.5">学号</p>
+              <p className="text-sm text-exam-text font-mono">{storedUser.student_id}</p>
+            </div>
+
+            {/* Password — only if user has one */}
+            {storedUser.has_password ? (
+              <input
+                type="password"
+                placeholder="输入密码"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full bg-exam-surface border border-exam-border rounded-lg px-3.5 py-2.5 text-sm text-exam-text placeholder:text-exam-text-muted outline-none focus:border-exam-accent"
+              />
+            ) : (
+              <p className="text-xs text-exam-text-muted text-center">本设备已认证，无需密码</p>
+            )}
+
+            {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-exam-accent text-white rounded-full font-semibold active:scale-95 transition-transform disabled:opacity-50"
+            >
+              {loading ? '处理中…' : '登录'}
+            </button>
+          </form>
+
+          <button
+            onClick={forgetUser}
+            className="w-full mt-4 py-2 text-xs text-exam-text-muted hover:text-exam-text transition-colors"
+          >
+            不是{storedUser.name}？重新注册
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ══════════════════════════════════════════
+  // NEW USER VIEW (registration)
+  // ══════════════════════════════════════════
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-6 pb-20">
       <div className="w-full max-w-sm">
@@ -154,32 +254,50 @@ export function LoginScreen() {
           首次使用自动注册
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Province / City */}
-          {!checking && !PROV_CODE[province] && (
-            <p className="text-amber-400/80 text-xs text-center -mb-2">未能自动定位，请手动选择省/市</p>
-          )}
-          <div className="flex gap-2">
-            <select
-              value={province}
-              onChange={e => handleProvince(e.target.value)}
-              className="flex-1 bg-exam-surface border border-exam-border rounded-lg px-3 py-2.5 text-sm text-exam-text outline-none focus:border-exam-accent"
-            >
-              <option value="">省 / 直辖市</option>
-              {PROVINCES.filter(Boolean).map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={city}
-              onChange={e => setCity(e.target.value)}
-              className="flex-1 bg-exam-surface border border-exam-border rounded-lg px-3 py-2.5 text-sm text-exam-text outline-none focus:border-exam-accent"
-              disabled={!cities.length}
-            >
-              <option value="">城市</option>
-              {cities.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+        {logoutMessage && (
+          <div className="mb-4 p-3 bg-exam-accent/10 border border-exam-accent/20 rounded-lg text-center">
+            <p className="text-sm text-exam-accent">{logoutMessage}</p>
           </div>
+        )}
+
+        <form onSubmit={submitNew} className="space-y-4">
+          {/* Location — badge when auto-detected, dropdowns when editing */}
+          {!editingLocation && province && city ? (
+            <div className="flex items-center justify-between bg-exam-surface border border-exam-border rounded-lg px-3.5 py-2.5">
+              <span className="text-sm text-exam-text">
+                {province} · {city}
+              </span>
+              <button
+                type="button"
+                onClick={() => setEditingLocation(true)}
+                className="text-xs text-exam-text-muted hover:text-exam-accent transition-colors"
+              >
+                更正
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <select
+                value={province}
+                onChange={e => handleProvince(e.target.value)}
+                className="flex-1 bg-exam-surface border border-exam-border rounded-lg px-3 py-2.5 text-sm text-exam-text outline-none focus:border-exam-accent"
+              >
+                <option value="">省 / 直辖市</option>
+                {PROVINCES.filter(Boolean).map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              <select
+                value={city}
+                onChange={e => setCity(e.target.value)}
+                className="flex-1 bg-exam-surface border border-exam-border rounded-lg px-3 py-2.5 text-sm text-exam-text outline-none focus:border-exam-accent"
+                disabled={!cities.length}
+              >
+                <option value="">城市</option>
+                {cities.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Gender */}
           <div className="flex gap-3">
@@ -219,7 +337,7 @@ export function LoginScreen() {
           {/* Password */}
           <input
             type="password"
-            placeholder="密码（可选，换设备时需要）"
+            placeholder={mustSetPassword ? "请设置密码（至少6位）" : "密码（可选，换设备时需要）"}
             value={password}
             onChange={e => setPassword(e.target.value)}
             className="w-full bg-exam-surface border border-exam-border rounded-lg px-3.5 py-2.5 text-sm text-exam-text placeholder:text-exam-text-muted outline-none focus:border-exam-accent"
