@@ -91,7 +91,15 @@ async def auth(request: Request, body: dict):
     known_device = body.get("known_device", False)
 
     async def _match_device(student_id: str) -> tuple[str | None, bool]:
-        """Match/create device profile from fingerprint. Returns (device_token, is_known)."""
+        """Match device: client token → fingerprint hash → fuzzy. Returns (device_token, is_known)."""
+        # Layer 1: client-side device_token (fast, no fingerprint needed)
+        client_token = body.get("device_token", "")
+        if client_token:
+            matched = _device_profile_db.lookup_by_device_token(student_id, client_token)
+            if matched:
+                return client_token, True
+
+        # Layer 2: fingerprint hash matching
         fp = body.get("fingerprint", {})
         device_hash = fp.get("device_hash", "")
         if not device_hash:
@@ -127,6 +135,13 @@ async def auth(request: Request, body: dict):
                 raise HTTPException(401, "新设备需要输入密码")
             if bcrypt.checkpw(password.encode(), existing.hashed_password.encode()):
                 token = await get_jwt_strategy().write_token(existing)
+                # Register client device_token so next login matches it
+                client_token = body.get("device_token", "")
+                if client_token and not is_known:
+                    dt = _device_profile_db.register_token(
+                        existing.student_id, client_token,
+                        request.headers.get("user-agent", ""),
+                        request.client.host if request.client else "")
                 return _auth_response(existing, token, device_token=dt, known_device=False)
             raise HTTPException(401, "密码错误")
 

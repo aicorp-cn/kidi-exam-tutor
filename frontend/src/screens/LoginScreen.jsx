@@ -132,8 +132,8 @@ export function LoginScreen() {
     setLoading(true); setError('')
     try {
       // Layer 2 fingerprint only if Layer 1 has no device_token
-      const hasDevice = getPersistedDeviceToken()
-      const fingerprint = hasDevice ? null : await generateFingerprint()
+      const deviceToken = getPersistedDeviceToken()
+      const fingerprint = deviceToken ? null : await generateFingerprint()
       const r = await fetch(config.apiBase + '/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,6 +141,7 @@ export function LoginScreen() {
           student_id: storedUser.student_id,
           name: storedUser.name,
           password,
+          device_token: deviceToken,
           known_device: true,
           ...(fingerprint && { fingerprint }),
         }),
@@ -169,14 +170,15 @@ export function LoginScreen() {
     setLoading(true); setError('')
     try {
       // Layer 2 fingerprint only if Layer 1 has no device_token
-      const hasDevice = getPersistedDeviceToken()
-      const fingerprint = hasDevice ? null : await generateFingerprint()
+      const deviceToken = getPersistedDeviceToken()
+      const fingerprint = deviceToken ? null : await generateFingerprint()
       const r = await fetch(config.apiBase + '/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           province: PROV_CODE[province] || '',
           city, gender, input_id: inputId, name, password,
+          device_token: deviceToken,
           known_device: !!storedUser,
           ...(fingerprint && { fingerprint }),
         }),

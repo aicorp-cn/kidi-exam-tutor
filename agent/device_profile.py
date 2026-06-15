@@ -245,6 +245,33 @@ class DeviceProfileDB:
             )
             return device_token, False
 
+    def lookup_by_device_token(self, student_id: str, device_token: str) -> str | None:
+        """Match by client-side device_token. Returns device_hash if found, else None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT device_hash FROM device_profiles "
+                "WHERE student_id=? AND device_token=?",
+                (student_id, device_token),
+            ).fetchone()
+            return row[0] if row else None
+
+    def register_token(self, student_id: str, device_token: str,
+                       user_agent: str, ip_address: str) -> str:
+        """Register a client-side device_token so future logins match on it.
+        Uses the token itself as a unique device_hash placeholder."""
+        now = datetime.now(timezone.utc).isoformat()
+        device_hash = f"client:{device_token}"
+        label = self._make_label(user_agent, {})
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO device_profiles "
+                "(student_id, device_hash, device_token, device_label, "
+                "user_agent, ip_address, first_seen, last_seen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (student_id, device_hash, device_token, label,
+                 user_agent, ip_address, now, now),
+            )
+        return device_token
 
     @staticmethod
     def _make_label(user_agent: str, fingerprint: dict) -> str:
