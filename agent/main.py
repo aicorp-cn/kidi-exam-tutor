@@ -285,10 +285,12 @@ async def auth_me_update(body: dict, user: Student = Depends(current_user)):
         ).decode()
 
     if updates:
-        await user_db.update(user, updates)
+        updated = await user_db.update(user, updates)
+    else:
+        updated = user
 
-    return {"id": str(user.id), "email": user.email,
-            "student_id": user.student_id, "name": user.name}
+    return {"id": str(updated.id), "email": updated.email,
+            "student_id": updated.student_id, "name": updated.name}
 
 
 @app.post("/exams")

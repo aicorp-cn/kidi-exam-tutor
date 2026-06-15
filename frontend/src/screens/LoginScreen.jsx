@@ -94,9 +94,10 @@ export function LoginScreen() {
     }
   }, [logoutMessage])
 
-  // Auto-detect location on mount (new users only)
+  // Auto-detect location (fires on mount + mode switch)
   useEffect(() => {
     if (isReturning) { setChecking(false); return }
+    setChecking(true)
     fetch(config.apiBase + '/api/location')
       .then(r => r.json())
       .then(data => {
