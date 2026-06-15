@@ -55,7 +55,11 @@ export function LoginScreen() {
   const { config, setAuth, goHome, logoutMessage, setLogoutMessage, storedUser, forgetUser } = useApp()
 
   // ── Returning user mode ──
-  const isReturning = !!storedUser
+  // showRegistration: local override — user tapped "重新注册" but hasn't committed yet.
+  // storedUser is NOT cleared until a new registration succeeds, so accidental taps
+  // can be undone by tapping "← 返回".
+  const [showRegistration, setShowRegistration] = useState(false)
+  const isReturning = !!storedUser && !showRegistration
 
   // ── New user form state ──
   const [province, setProvince] = useState('')
@@ -164,6 +168,7 @@ export function LoginScreen() {
         setError(data.detail || '登录失败')
         return
       }
+      forgetUser()  // clear old storedUser before writing new one
       localStorage.setItem('exam_tutor_token', data.access_token)
       setAuth(data.access_token, data)
       goHome()
@@ -231,7 +236,7 @@ export function LoginScreen() {
           </form>
 
           <button
-            onClick={forgetUser}
+            onClick={() => { setShowRegistration(true); setLogoutMessage('') }}
             className="w-full mt-4 py-2 text-xs text-exam-text-muted hover:text-exam-text transition-colors"
           >
             不是{storedUser.name}？重新注册
@@ -354,6 +359,17 @@ export function LoginScreen() {
           >
             {loading ? '处理中…' : '开始使用'}
           </button>
+
+          {/* Back to returning user — visible only when coming from "重新注册" */}
+          {storedUser && (
+            <button
+              type="button"
+              onClick={() => { setShowRegistration(false); setError('') }}
+              className="w-full mt-3 py-2 text-xs text-exam-text-muted hover:text-exam-text transition-colors"
+            >
+              ← 返回 {storedUser.name} 的账号
+            </button>
+          )}
         </form>
       </div>
     </div>
