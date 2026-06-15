@@ -1,7 +1,7 @@
 """Device profile persistence — Layer 2 server-side fingerprint matching.
 
 Schema: device_profiles(student_id, device_hash, canvas_hash, webgl_renderer,
-                        audio_hash, screen_sig, user_agent, ip_address,
+                        screen_sig, user_agent, ip_address,
                         device_token, device_label, total_seen, first_seen, last_seen)
 
 Each student_id can have up to 5 device profiles.
@@ -89,14 +89,13 @@ class DeviceProfileDB:
                 # Update signals (fingerprint evolution)
                 conn.execute(
                     "UPDATE device_profiles SET "
-                    "canvas_hash = ?, webgl_renderer = ?, audio_hash = ?, "
+                    "canvas_hash = ?, webgl_renderer = ?, "
                     "screen_sig = ?, user_agent = ?, ip_address = ?, "
                     "total_seen = total_seen + 1, last_seen = ? "
                     "WHERE student_id = ? AND device_hash = ?",
                     (
                         fingerprint.get("canvas_hash", ""),
                         fingerprint.get("webgl_renderer", ""),
-                        fingerprint.get("audio_hash", ""),
                         fingerprint.get("screen_sig", ""),
                         user_agent,
                         ip_address,
@@ -113,15 +112,14 @@ class DeviceProfileDB:
 
             conn.execute(
                 "INSERT INTO device_profiles "
-                "(student_id, device_hash, canvas_hash, webgl_renderer, audio_hash, "
+                "(student_id, device_hash, canvas_hash, webgl_renderer, "
                 "screen_sig, user_agent, ip_address, device_token, device_label, "
                 "first_seen, last_seen) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     student_id, device_hash,
                     fingerprint.get("canvas_hash", ""),
                     fingerprint.get("webgl_renderer", ""),
-                    fingerprint.get("audio_hash", ""),
                     fingerprint.get("screen_sig", ""),
                     user_agent, ip_address,
                     device_token, device_label,

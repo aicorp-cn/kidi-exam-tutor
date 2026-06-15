@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
-import { persistDeviceToken } from './device'
+import { persistDeviceToken, getPersistedDeviceToken } from './device'
 
 const AppContext = createContext(null)
 
@@ -82,6 +82,11 @@ export function AppProvider({ children }) {
         allowedTypes: cfg.allowed_types || [],
       }))
       .catch(() => {})
+  }, [])
+
+  // Layer 1 self-heal: Cookie → localStorage on startup
+  useEffect(() => {
+    getPersistedDeviceToken()
   }, [])
 
   // Restore auth from localStorage

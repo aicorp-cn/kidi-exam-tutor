@@ -1,5 +1,8 @@
 // Layer 2: Client-side fingerprint collection
-// Canvas, WebGL, AudioContext, Screen → SHA-256 device_hash
+// Canvas, WebGL, Screen → SHA-256 device_hash
+//
+// AudioContext removed: silent oscillator produces constant hash on all devices.
+// Three signals (Canvas + WebGL + Screen) provide sufficient discrimination.
 //
 // P1: exact hash matching on server
 // P2: fuzzy matching (added server-side later)
@@ -16,8 +19,7 @@ async function sha256(data) {
 
 /**
  * Collect browser fingerprint signals.
- * Returns { device_hash, canvas_hash, webgl_renderer, audio_hash, screen_sig }
- * or null if fingerprinting is completely unavailable.
+ * Returns { device_hash, canvas_hash, webgl_renderer, screen_sig }
  */
 export async function generateFingerprint() {
   const signals = {}
@@ -55,26 +57,6 @@ export async function generateFingerprint() {
     signals.webgl_renderer = 'webgl_error'
   }
 
-  // ── AudioContext fingerprint ──
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext
-    if (AudioCtx) {
-      const ac = new AudioCtx()
-      const osc = ac.createOscillator()
-      const ana = ac.createAnalyser()
-      osc.connect(ana)
-      ana.connect(ac.destination)
-      const samples = new Float32Array(ana.frequencyBinCount)
-      ana.getFloatTimeDomainData(samples)
-      signals.audio_hash = await sha256(samples.buffer)
-      await ac.close()
-    } else {
-      signals.audio_hash = 'no_audio_context'
-    }
-  } catch {
-    signals.audio_hash = 'audio_error'
-  }
-
   // ── Screen signature ──
   try {
     signals.screen_sig = `${screen.width}x${screen.height}x${devicePixelRatio}`
@@ -86,7 +68,6 @@ export async function generateFingerprint() {
   const raw = [
     signals.canvas_hash,
     signals.webgl_renderer,
-    signals.audio_hash,
     signals.screen_sig,
   ].join('|')
   signals.device_hash = await sha256(raw)
