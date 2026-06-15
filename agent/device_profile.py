@@ -32,7 +32,6 @@ class DeviceProfileDB:
                     device_hash  TEXT NOT NULL,
                     canvas_hash  TEXT NOT NULL DEFAULT '',
                     webgl_renderer TEXT NOT NULL DEFAULT '',
-                    audio_hash   TEXT NOT NULL DEFAULT '',
                     screen_sig   TEXT NOT NULL DEFAULT '',
                     user_agent   TEXT NOT NULL DEFAULT '',
                     ip_address   TEXT NOT NULL DEFAULT '',
