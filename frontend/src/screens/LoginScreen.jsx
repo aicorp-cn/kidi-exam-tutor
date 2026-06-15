@@ -114,7 +114,7 @@ export function LoginScreen() {
       })
       .catch(() => {})
       .finally(() => setChecking(false))
-  }, [])
+  }, [isReturning])
 
   const handleProvince = (pv) => {
     setProvince(pv)
