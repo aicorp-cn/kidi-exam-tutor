@@ -159,7 +159,7 @@ export function LoginScreen() {
         body: JSON.stringify({
           province: PROV_CODE[province] || '',
           city, gender, input_id: inputId, name, password,
-          known_device: false,
+          known_device: !!storedUser,
         }),
       })
       const data = await r.json()
