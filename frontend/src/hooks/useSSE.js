@@ -37,7 +37,7 @@ export function useSSE() {
       if (!body.session_id) { setError({ message: '服务响应异常', recoverable: true }); setStage('error'); return }
       const sessionId = body.session_id
       setStage('ocr'); setStatusText('正在识别试卷文字…')
-      const es = new EventSource(apiBase + '/sse/ui?session=' + sessionId)
+      const es = new EventSource(apiBase + '/sse/ui?session=' + sessionId + '&token=' + encodeURIComponent(authToken))
       esRef.current = es
       let sseErrors = 0
       es.onmessage = (e) => {

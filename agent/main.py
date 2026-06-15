@@ -255,7 +255,8 @@ async def api_config():
 @app.get("/auth/me", tags=["auth"])
 async def auth_me(user: Student = Depends(current_user)):
     return {"id": str(user.id), "email": user.email,
-            "student_id": user.student_id, "name": user.name}
+            "student_id": user.student_id, "name": user.name,
+            "has_password": bool(user.hashed_password)}
 
 
 @app.patch("/auth/me", tags=["auth"])
@@ -384,7 +385,17 @@ async def batch_delete_exams(request: Request, user: Student = Depends(current_u
 # ═══════════════════════════════════════════════════════════════
 
 @app.get("/sse/ui")
-async def sse_ui(session: str = Query(...)):
+async def sse_ui(session: str = Query(...), token: str = Query(...)):
+    # Validate auth token (EventSource doesn't support Authorization header)
+    try:
+        from user import get_user_manager as _get_user_manager
+        user = await get_jwt_strategy().read_token(
+            token, await _get_user_manager(user_db=_student_db))
+        if user is None or not user.is_active:
+            return JSONResponse({"error": "unauthorized"}, 401)
+    except Exception:
+        return JSONResponse({"error": "unauthorized"}, 401)
+
     q = asyncio.Queue()
     ui_queues.setdefault(session, []).append(q)
 
