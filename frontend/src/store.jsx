@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { persistDeviceToken } from './device'
 
 const AppContext = createContext(null)
 
@@ -46,6 +47,10 @@ export function AppProvider({ children }) {
     const u = { student_id: user.student_id, name: user.name, has_password: !!user.has_password }
     localStorage.setItem('exam_tutor_user', JSON.stringify(u))
     setStoredUser(u)
+    // Layer 1: 写入 device_token 到三层冗余存储
+    if (user.device_token) {
+      persistDeviceToken(user.device_token)
+    }
     setScreen('home')
   }, [])
 

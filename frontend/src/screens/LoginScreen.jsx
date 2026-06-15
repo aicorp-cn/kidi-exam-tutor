@@ -138,6 +138,7 @@ export function LoginScreen() {
         return
       }
       localStorage.setItem('exam_tutor_token', data.access_token)
+      if (!data.device_token) data.device_token = crypto.randomUUID()
       setAuth(data.access_token, data)
       goHome()
     } catch { setError('网络错误，请重试') }
@@ -170,6 +171,7 @@ export function LoginScreen() {
       }
       forgetUser()  // clear old storedUser before writing new one
       localStorage.setItem('exam_tutor_token', data.access_token)
+      if (!data.device_token) data.device_token = crypto.randomUUID()
       setAuth(data.access_token, data)
       goHome()
     } catch { setError('网络错误，请重试') }
