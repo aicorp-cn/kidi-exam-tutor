@@ -14,6 +14,7 @@ function scoped(key) {
 export const KEYS = {
   REVIEW:        scoped('review'),
   HISTORY_STATE: scoped('history_state'),
+  MANUAL_LOGOUT: scoped('manual_logout'),
 }
 
 export function sessionGet(key) {

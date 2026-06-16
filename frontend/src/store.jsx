@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { persistDeviceToken, getPersistedDeviceToken, getDeviceTokenFromIDB } from './device'
-import { KEYS, sessionGet, sessionSet } from './storage'
+import { KEYS, sessionGet, sessionSet, sessionRemove } from './storage'
 
 const AppContext = createContext(null)
 
@@ -55,6 +55,8 @@ export function AppProvider({ children }) {
   // ── Auth helpers ──
 
   const setAuth = useCallback((token, user) => {
+    sessionRemove(KEYS.MANUAL_LOGOUT)  // explicit login clears logout intent
+    authRef.current = token             // sync for navigate() guard below
     setAuthToken(token)
     setCurrentUser(user)
     const u = { student_id: user.student_id, name: user.name, has_password: !!user.has_password }
@@ -69,6 +71,7 @@ export function AppProvider({ children }) {
 
   const clearAuth = useCallback(() => {
     localStorage.removeItem('exam_tutor_token')
+    sessionSet(KEYS.MANUAL_LOGOUT, true)
     setAuthToken(null)
     setCurrentUser(null)
     setLogoutMessage('已安全退出')

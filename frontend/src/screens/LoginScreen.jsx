@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../store'
 import { generateFingerprint } from '../fingerprint'
 import { getPersistedDeviceToken } from '../device'
+import { KEYS, sessionGet } from '../storage'
 
 function makeUUID() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -94,6 +95,67 @@ export function LoginScreen() {
     }
   }, [logoutMessage])
 
+  // ── Auto-login / device check on mount ──
+  // Always fires: determines device status so UI never surprises user.
+  // MANUAL_LOGOUT flag changes behaviour: known → don't redirect, just show status.
+  // No flag → known device auto-redirects (0-click login).
+  const autoLoginDone = useRef(false)
+  const [deviceKnown, setDeviceKnown] = useState(null)  // null=checking, true, false
+
+  useEffect(() => {
+    if (!isReturning) return
+    if (!storedUser?.student_id) return
+    if (autoLoginDone.current) return
+    autoLoginDone.current = true
+
+    const manualLogout = !!sessionGet(KEYS.MANUAL_LOGOUT)
+
+    let cancelled = false
+    async function checkDevice() {
+      setLoading(true)
+      try {
+        const deviceToken = getPersistedDeviceToken()
+        const fingerprint = await generateFingerprint()
+        const r = await fetch(config.apiBase + '/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_id: storedUser.student_id,
+            name: storedUser.name,
+            password: '',
+            device_token: deviceToken,
+            known_device: true,
+            fingerprint,
+          }),
+        })
+        if (cancelled) return
+        const data = await r.json()
+        if (r.ok) {
+          if (manualLogout) {
+            // Explicit logout — show result, don't redirect
+            setDeviceKnown(true)
+          } else {
+            // Normal return — auto-login
+            localStorage.setItem('exam_tutor_token', data.access_token)
+            if (!data.device_token) data.device_token = makeUUID()
+            setAuth(data.access_token, data)
+            goHome()
+            return
+          }
+        } else {
+          // Device unknown
+          setDeviceKnown(false)
+        }
+      } catch {
+        setDeviceKnown(null)  // Network error — fall through, let user retry
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    checkDevice()
+    return () => { cancelled = true }
+  }, [isReturning, config.apiBase])
+
   // Auto-detect location (fires on mount + mode switch)
   useEffect(() => {
     if (isReturning) { setChecking(false); return }
@@ -131,9 +193,11 @@ export function LoginScreen() {
     }
     setLoading(true); setError('')
     try {
-      // Layer 2 fingerprint only if Layer 1 has no device_token
+      // device_token + fingerprint are complementary, not exclusive.
+      // Sending only one creates a single point of failure:
+      //   token present but unregistered → fingerprint skipped → unknown device.
       const deviceToken = getPersistedDeviceToken()
-      const fingerprint = deviceToken ? null : await generateFingerprint()
+      const fingerprint = await generateFingerprint()
       const r = await fetch(config.apiBase + '/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -143,7 +207,7 @@ export function LoginScreen() {
           password,
           device_token: deviceToken,
           known_device: true,
-          ...(fingerprint && { fingerprint }),
+          fingerprint,
         }),
       })
       const data = await r.json()
@@ -169,9 +233,9 @@ export function LoginScreen() {
     }
     setLoading(true); setError('')
     try {
-      // Layer 2 fingerprint only if Layer 1 has no device_token
+      // device_token + fingerprint are complementary, not exclusive.
       const deviceToken = getPersistedDeviceToken()
-      const fingerprint = deviceToken ? null : await generateFingerprint()
+      const fingerprint = await generateFingerprint()
       const r = await fetch(config.apiBase + '/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -180,7 +244,7 @@ export function LoginScreen() {
           city, gender, input_id: inputId, name, password,
           device_token: deviceToken,
           known_device: !!storedUser,
-          ...(fingerprint && { fingerprint }),
+          fingerprint,
         }),
       })
       const data = await r.json()
@@ -210,6 +274,19 @@ export function LoginScreen() {
   // RETURNING USER VIEW
   // ══════════════════════════════════════════
   if (isReturning) {
+    // Device check in progress — show spinner
+    if (deviceKnown === null) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center px-6 pb-20">
+          <div className="w-full max-w-sm text-center">
+            <h1 className="text-2xl font-bold text-exam-text mb-1">欢迎回来</h1>
+            <p className="text-exam-text-muted text-sm mb-8">{storedUser.name}</p>
+            <div className="text-exam-text-muted text-sm">正在验证设备…</div>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 pb-20">
         <div className="w-full max-w-sm">
@@ -233,11 +310,11 @@ export function LoginScreen() {
               <p className="text-sm text-exam-text font-mono">{storedUser.student_id}</p>
             </div>
 
-            {/* Password — only if user has one */}
-            {storedUser.has_password ? (
+            {/* Password — only if user has one AND device is unknown */}
+            {storedUser.has_password && !deviceKnown ? (
               <input
                 type="password"
-                placeholder="输入密码"
+                placeholder="首次在此设备登录，请输入密码"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="w-full bg-exam-surface border border-exam-border rounded-lg px-3.5 py-2.5 text-sm text-exam-text placeholder:text-exam-text-muted outline-none focus:border-exam-accent"
@@ -258,7 +335,7 @@ export function LoginScreen() {
           </form>
 
           <button
-            onClick={() => { setShowRegistration(true); setLogoutMessage('') }}
+            onClick={() => { setShowRegistration(true); setLogoutMessage(''); setError(''); setPassword(''); setMustSetPassword(false) }}
             className="w-full mt-4 py-2 text-xs text-exam-text-muted hover:text-exam-text transition-colors"
           >
             不是{storedUser.name}？重新注册

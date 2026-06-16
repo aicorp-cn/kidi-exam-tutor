@@ -143,6 +143,36 @@ class DeviceProfileDB:
         return None
 
 
+    def match_only(
+        self,
+        student_id: str,
+        device_hash: str,
+        fingerprint: dict,
+        ip_address: str,
+    ) -> tuple[str | None, bool]:
+        """Match device: exact hash → fuzzy. No side effects — never creates.
+
+        Returns (device_token, known_device).
+        """
+        with self._connect() as conn:
+            # ── P1: Exact match ──────────────────────────────────────
+            row = conn.execute(
+                "SELECT device_token FROM device_profiles "
+                "WHERE student_id = ? AND device_hash = ?",
+                (student_id, device_hash),
+            ).fetchone()
+
+            if row:
+                return row[0], True
+
+            # ── P2: Fuzzy match ──────────────────────────────────────
+            profiles = self._get_all_profiles(conn, student_id)
+            best = self.fuzzy_match(fingerprint, ip_address, profiles)
+            if best is not None:
+                return best.device_token, True
+
+            return None, False
+
     def match_or_create(
         self,
         student_id: str,

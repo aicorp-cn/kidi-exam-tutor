@@ -90,8 +90,13 @@ async def auth(request: Request, body: dict):
     import bcrypt
     known_device = body.get("known_device", False)
 
-    async def _match_device(student_id: str) -> tuple[str | None, bool]:
-        """Match device: client token → fingerprint hash → fuzzy. Returns (device_token, is_known)."""
+    async def _match_device(student_id: str, create: bool = True) -> tuple[str | None, bool]:
+        """Match device: client token → fingerprint hash → fuzzy.
+
+        When create=False (auto-login, passwordless attempt): match only, never write.
+        When create=True (password auth): match or create new profile.
+        Returns (device_token, is_known).
+        """
         # Layer 1: client-side device_token (fast, no fingerprint needed)
         client_token = body.get("device_token", "")
         if client_token:
@@ -104,13 +109,21 @@ async def auth(request: Request, body: dict):
         device_hash = fp.get("device_hash", "")
         if not device_hash:
             return None, False
-        return _device_profile_db.match_or_create(
-            student_id=student_id,
-            device_hash=device_hash,
-            fingerprint=fp,
-            user_agent=request.headers.get("user-agent", ""),
-            ip_address=request.client.host if request.client else "",
-        )
+        if create:
+            return _device_profile_db.match_or_create(
+                student_id=student_id,
+                device_hash=device_hash,
+                fingerprint=fp,
+                user_agent=request.headers.get("user-agent", ""),
+                ip_address=request.client.host if request.client else "",
+            )
+        else:
+            return _device_profile_db.match_only(
+                student_id=student_id,
+                device_hash=device_hash,
+                fingerprint=fp,
+                ip_address=request.client.host if request.client else "",
+            )
 
     # ── Returning user path ──
     direct_student_id = body.get("student_id", "").strip()
@@ -123,8 +136,10 @@ async def auth(request: Request, body: dict):
         if existing.name != name:
             raise HTTPException(401, "姓名不匹配")
 
-        # Try device match — if known device, allow passwordless even with password set
-        dt, is_known = await _match_device(existing.student_id)
+        # Try device match — if known device, allow passwordless even with password set.
+        # When no password (auto-login): match only, no side effects.
+        # When password provided: match or create (user is authenticating).
+        dt, is_known = await _match_device(existing.student_id, create=bool(password))
         if is_known:
             token = await get_jwt_strategy().write_token(existing)
             return _auth_response(existing, token, device_token=dt, known_device=True)
