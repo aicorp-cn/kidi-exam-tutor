@@ -4,12 +4,13 @@
 
 ---
 
-## 预览
+## 截图
 
-| 首页 | 精讲 | 历史 | 解析 |
-|:---:|:---:|:---:|:---:|
-| ![截图1](asserts/kidi-exam-tutor-screenshot-01.png) | ![截图4](asserts/kidi-exam-tutor-screenshot-04.png) | ![截图6](asserts/kidi-exam-tutor-screenshot-06.png) | ![截图9](asserts/kidi-exam-tutor-screenshot-09.png) |
-| 拍照/上传试卷 | 逐题精讲 + 语音 | 历史记录 + 搜索 | 错题/考点标注 |
+| | | |
+|:---:|:---:|:---:|
+| ![01](asserts/kidi-exam-tutor-screenshot-01.png) | ![02](asserts/kidi-exam-tutor-screenshot-02.png) | ![03](asserts/kidi-exam-tutor-screenshot-03.png) |
+| ![04](asserts/kidi-exam-tutor-screenshot-04.png) | ![05](asserts/kidi-exam-tutor-screenshot-05.png) | ![06](asserts/kidi-exam-tutor-screenshot-06.png) |
+| ![07](asserts/kidi-exam-tutor-screenshot-07.png) | ![08](asserts/kidi-exam-tutor-screenshot-08.png) | ![09](asserts/kidi-exam-tutor-screenshot-09.png) |
 
 ---
 
@@ -126,15 +127,3 @@ exam-tutor/
 | 5 | **质量门分层** — OCR 质量门（硬阻断）/ 结构校验（strict 保证）/ 语义校验（warnings 不阻断） |
 
 → 完整架构：[DESIGN.md](DESIGN.md) | 版本历史：[CHANGELOG.md](CHANGELOG.md)
-
----
-
-## 更多截图
-
-| 功能 | 截图 |
-|------|:----:|
-| 上传处理 | ![截图2](asserts/kidi-exam-tutor-screenshot-02.png) |
-| 逐题精讲(上) | ![截图3](asserts/kidi-exam-tutor-screenshot-03.png) |
-| 精讲详情 | ![截图5](asserts/kidi-exam-tutor-screenshot-05.png) |
-| 历史列表 | ![截图7](asserts/kidi-exam-tutor-screenshot-07.png) |
-| 搜索筛选 | ![截图8](asserts/kidi-exam-tutor-screenshot-08.png) |
